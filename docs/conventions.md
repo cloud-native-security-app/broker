@@ -8,12 +8,20 @@
 | Elemento | Convención | Ejemplo |
 |----------|------------|---------|
 | Vhost | `kebab-case`, uno para toda la plataforma salvo razón concreta | `security-app` |
-| Exchange | `kebab-case`, tipo `topic` salvo razón concreta, singular del dominio + `.` + acción | `scan.requests`, `scan.outcomes` |
+| Exchange | `kebab-case`, tipo `topic` salvo razón concreta, singular del dominio + `.` + acción | `scan.requests`, `scan.outcomes`, `scan.cancellations` |
 | Exchange de dead-letter | mismo nombre + `.dlx` | `scan.requests.dlx` |
-| Cola | `<servicio-consumidor>.<qué-consume>` | `ms-nmap.scan-requests`, `ms-analisis.scan-outcomes` |
+| Cola | `<servicio-consumidor>.<qué-consume>` | `ms-nmap.scan-requests`, `ms-analisis.scan-outcomes`, `gateway.scan-outcomes`, `ms-nmap.scan-cancellations` |
 | Cola de dead-letter | mismo nombre + `.dlq` | `ms-nmap.scan-requests.dlq` |
-| Routing key | `kebab-case` con puntos, describe el evento, no el destinatario | `scan.request`, `scan.outcome.completed`, `scan.outcome.failed` |
+| Routing key | `kebab-case` con puntos, describe el evento, no el destinatario | `scan.request`, `scan.outcome.started`, `scan.outcome.completed`, `scan.outcome.failed`, `scan.cancellation` |
 | Usuario de RabbitMQ | igual al nombre del servicio | `gateway`, `ms-nmap`, `ms-analisis` |
+
+- Distintas colas pueden bindearse al **mismo** exchange con distintas
+  routing keys (o comodín `#`) cuando distintos consumidores necesitan
+  distintos subconjuntos del mismo tipo de evento — así `gateway.scan-outcomes`
+  se bindea a `scan.outcome.#` (las tres variantes) mientras
+  `ms-analisis.scan-outcomes` solo a `scan.outcome.completed` +
+  `scan.outcome.failed`. No se crea un exchange nuevo solo porque un
+  consumidor quiere un subconjunto de eventos que ya existen en otro.
 
 - Un usuario **solo** tiene permisos (`configure`/`write`/`read`, por regex)
   sobre los exchanges/colas que su servicio necesita — nunca acceso amplio

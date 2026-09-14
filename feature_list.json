@@ -19,17 +19,20 @@
     {
       "id": 2,
       "name": "topology_definition",
-      "title": "Topología de RabbitMQ: exchanges, colas, bindings y usuarios de mínimo privilegio",
-      "description": "Define rabbitmq/definitions.json con la topología real que conecta Gateway -> ms-nmap y ms-nmap -> ms-analisis, y los usuarios de servicio con permisos acotados. docker-compose.yml carga este archivo al arrancar. Es la feature central: sin ella no hay Broker real que probar.",
+      "title": "Topología de RabbitMQ: exchanges, colas, bindings, reintentos limitados y usuarios de mínimo privilegio",
+      "description": "Define rabbitmq/definitions.json con la topología real que conecta Gateway -> ms-nmap, ms-nmap -> ms-analisis y ms-nmap -> Gateway (desenlaces en tiempo real, RF-08), con reintentos acotados antes de derivar a dead-letter (RNF-06) y usuarios de servicio con permisos acotados. docker-compose.yml carga este archivo al arrancar. Es la feature central: sin ella no hay Broker real que probar.",
       "acceptance": [
         "rabbitmq/definitions.json declara un vhost dedicado (p. ej. security-app) y, dentro de él: exchange scan.requests (topic) con su exchange de dead-letter scan.requests.dlx; exchange scan.outcomes (topic) con su dead-letter scan.outcomes.dlx",
-        "Cola ms-nmap.scan-requests bindeada a scan.requests con routing key scan.request, con x-dead-letter-exchange apuntando a scan.requests.dlx y su cola ms-nmap.scan-requests.dlq",
-        "Cola ms-analisis.scan-outcomes bindeada a scan.outcomes con routing key(s) scan.outcome.# (o equivalente), con su dead-letter scan.outcomes.dlx y cola ms-analisis.scan-outcomes.dlq",
-        "Tres usuarios de servicio (gateway, ms-nmap, ms-analisis), cada uno con contraseña de laboratorio (nunca real) y permisos (configure/write/read) acotados por regex SOLO a lo que su servicio necesita: gateway puede escribir en scan.requests pero no leer ms-nmap.scan-requests ni tocar scan.outcomes; ms-nmap puede leer su cola y escribir en scan.outcomes; ms-analisis solo puede leer su cola",
+        "Cola ms-nmap.scan-requests bindeada a scan.requests con routing key scan.request, con su cola de dead-letter ms-nmap.scan-requests.dlq",
+        "Cola ms-analisis.scan-outcomes bindeada a scan.outcomes SOLO con routing keys scan.outcome.completed y scan.outcome.failed (NO scan.outcome.started), con su cola de dead-letter ms-analisis.scan-outcomes.dlq",
+        "Cola gateway.scan-outcomes bindeada a scan.outcomes con routing key scan.outcome.# (las tres variantes: started, completed, failed), con su cola de dead-letter gateway.scan-outcomes.dlq — esta cola es la que permite al Gateway notificar al frontend en tiempo real (RF-08)",
+        "Reintentos limitados antes de dead-letter (RNF-06): cada cola principal implementa un patrón de N reintentos acotados (p. ej. cola de retry intermedia con TTL corto que reencola a la cola original, contando los reintentos vía el header x-death) antes de caer en su .dlq definitiva — NO un TTL/rechazo único que vaya directo a la .dlq. El número N y el TTL de retry quedan documentados y justificados (valores de laboratorio razonables, no arbitrarios)",
+        "Tres usuarios de servicio (gateway, ms-nmap, ms-analisis), cada uno con contraseña de laboratorio (nunca real) y permisos (configure/write/read) acotados por regex SOLO a lo que su servicio necesita: gateway puede escribir en scan.requests y leer gateway.scan-outcomes, pero no leer ms-nmap.scan-requests ni ms-analisis.scan-outcomes; ms-nmap puede leer su cola y escribir en scan.outcomes; ms-analisis solo puede leer su cola",
         "docker-compose.yml monta/carga rabbitmq/definitions.json (vía RABBITMQ_LOAD_DEFINITIONS o el mecanismo equivalente de la imagen) al arrancar el contenedor",
-        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"]): levanta rabbitmq:management real con esta topología cargada y, conectando con lapin, verifica que exchanges/colas/bindings existen exactamente como se definieron",
+        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"]): levanta rabbitmq:management real con esta topología cargada y, conectando con lapin, verifica que exchanges/colas/bindings existen exactamente como se definieron, incluidas las tres colas de scan.outcomes con sus bindings diferenciados",
         "Test de integración: conectando como cada usuario de servicio, verifica el caso POSITIVO (puede publicar/consumir lo suyo) y el caso NEGATIVO (acceso denegado a la cola/exchange de otro servicio) para los 3 usuarios",
-        "Test de integración: un mensaje publicado en ms-nmap.scan-requests que se rechaza (nack sin requeue) o agota su TTL termina en ms-nmap.scan-requests.dlq",
+        "Test de integración: publicando en scan.outcomes con routing key scan.outcome.started, el mensaje llega a gateway.scan-outcomes pero NO a ms-analisis.scan-outcomes; con scan.outcome.completed llega a ambas",
+        "Test de integración: un mensaje que agota el número máximo de reintentos configurado (no un TTL único) termina en la .dlq correspondiente; se verifica que efectivamente pasó por el ciclo de reintentos (no cayó directo a la primera)",
         "./init.sh en verde: cargo fmt/clippy/test/test --ignored/doc limpios"
       ],
       "status": "pending"
@@ -53,30 +56,62 @@
     {
       "id": 4,
       "name": "message_contract",
-      "title": "Contrato de mensajes: JSON Schema de ScanRequest y ScanOutcome",
-      "description": "Congela y documenta en contracts/ el formato exacto de ScanRequest y ScanOutcome, copiado literalmente de lo que ms-nmap ya implementa y testea (src/domain.rs, src/messaging/). Incluye qué exchange/routing-key transporta cada mensaje y quién publica/consume. Sin política de versionado nueva (no se inventa schema_version sin acordarlo).",
+      "title": "Contrato de mensajes: JSON Schema de ScanRequest y ScanOutcome (started/completed/failed)",
+      "description": "Congela y documenta en contracts/ el formato exacto de ScanRequest y ScanOutcome, copiado literalmente de lo que ms-nmap ya implementa y testea (src/domain.rs, src/messaging/), más la variante started acordada para RF-07/RF-08. La variante started queda documentada como contrato acordado pero PENDIENTE de implementar en ms-nmap (no se toca ese repo aquí). Incluye qué exchange/routing-key transporta cada mensaje y quién publica/consume. Sin política de versionado nueva (no se inventa schema_version sin acordarlo).",
       "acceptance": [
         "contracts/scan-request.schema.json: JSON Schema (draft 2020-12 o el que se decida y documente) que valida exactamente el shape real de ScanRequest en ms-nmap: correlation_id (string), ip (string, formato IPv4 o IPv6), network_user (string), ssh_credentials_ref (string), has_sudo (boolean), requested_by (string); todos requeridos, sin propiedades adicionales no documentadas",
-        "contracts/scan-outcome.schema.json: JSON Schema que valida el shape real de ScanOutcome (tageado por status): {status: \"completed\", correlation_id, result: {...}} o {status: \"failed\", correlation_id, reason}; no se re-deriva el shape interno de ScanResult desde cero sin contrastarlo con ms-nmap",
-        "contracts/README.md documenta: qué exchange/routing-key transporta cada mensaje (según rabbitmq/definitions.json de la feature 2), quién publica y quién consume cada uno, y una nota explícita de que el contrato es una copia del que ya implementa ms-nmap, no una fuente independiente",
+        "contracts/scan-outcome.schema.json: JSON Schema que valida el shape real de ScanOutcome tageado por status, con TRES variantes: {status: \"started\", correlation_id} (sin result ni reason), {status: \"completed\", correlation_id, result: {...}}, {status: \"failed\", correlation_id, reason}; no se re-deriva el shape interno de ScanResult desde cero sin contrastarlo con ms-nmap",
+        "contracts/README.md marca explícitamente la variante started como 'contrato acordado, publicación pendiente de implementar en ms-nmap' — no se afirma que ms-nmap ya la envía",
+        "contracts/README.md documenta: qué exchange/routing-key transporta cada mensaje (según rabbitmq/definitions.json de la feature 2, incluida la diferencia de bindings entre ms-analisis.scan-outcomes y gateway.scan-outcomes), quién publica y quién consume cada uno",
         "Nota explícita (en contracts/README.md o docs/architecture.md) de que no hay campo de versión de schema todavía y que cualquier cambio de formato debe ser aditivo hasta que se decida una política de versionado",
-        "Tests unitarios (sin Docker): payloads de ejemplo (incluido uno con un ssh_credentials_ref de laboratorio, nunca real) validan correctamente contra scan-request.schema.json; payloads completed y failed de ejemplo validan contra scan-outcome.schema.json; un payload inválido (falta un campo requerido) es rechazado por el validador con un mensaje claro",
-        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"], smoke end-to-end del contrato): publica un ScanRequest de ejemplo válido en scan.requests y verifica que llega íntegro a ms-nmap.scan-requests; publica un ScanOutcome completed y otro failed en scan.outcomes y verifica que ambos llegan a ms-analisis.scan-outcomes",
+        "Tests unitarios (sin Docker): payloads de ejemplo (incluido uno con un ssh_credentials_ref de laboratorio, nunca real) validan correctamente contra scan-request.schema.json; payloads started, completed y failed de ejemplo validan contra scan-outcome.schema.json; un payload inválido (falta un campo requerido) es rechazado por el validador con un mensaje claro",
+        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"], smoke end-to-end del contrato): publica un ScanRequest de ejemplo válido en scan.requests y verifica que llega íntegro a ms-nmap.scan-requests; publica los tres ScanOutcome de ejemplo (started, completed, failed) en scan.outcomes y verifica el enrutamiento correcto a gateway.scan-outcomes (los tres) y ms-analisis.scan-outcomes (solo completed y failed)",
         "./init.sh en verde"
       ],
       "status": "pending"
     },
     {
       "id": 5,
+      "name": "cancellation_contract",
+      "title": "Contrato y topología para cancelar un escaneo activo (RF-14)",
+      "description": "Define el canal y el contrato para que el Gateway pueda publicar una solicitud de cancelación de un escaneo en curso. ms-nmap consume el mensaje, pero implementar que realmente aborte el pipeline en ejecución es trabajo pendiente en el repo nmap-service, fuera de este plan — aquí solo se define y verifica el canal.",
+      "acceptance": [
+        "rabbitmq/definitions.json añade el exchange scan.cancellations (topic) con su dead-letter scan.cancellations.dlx, y la cola ms-nmap.scan-cancellations bindeada con routing key scan.cancellation, con su cola de dead-letter ms-nmap.scan-cancellations.dlq, siguiendo el mismo patrón de reintentos limitados que la feature 2",
+        "El usuario gateway obtiene permiso de escritura sobre scan.cancellations (ampliando sus permisos de la feature 2); el usuario ms-nmap obtiene permiso de lectura sobre ms-nmap.scan-cancellations; ningún otro usuario tiene acceso a este exchange/cola",
+        "contracts/scan-cancellation.schema.json: JSON Schema del mensaje de cancelación, mínimo con correlation_id (el del escaneo a cancelar) y requested_by; sin campos que no se puedan justificar",
+        "contracts/README.md documenta este mensaje igual que los demás (exchange/routing-key/publicador/consumidor) y dice explícitamente que ms-nmap consumir y honrar esta cancelación (abortar el pipeline en curso) es trabajo PENDIENTE en el repo nmap-service, no implementado ahí todavía",
+        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"]): el usuario gateway puede publicar un mensaje de cancelación válido y llega a ms-nmap.scan-cancellations; el usuario ms-analisis (u otro) NO puede publicar ni leer en este exchange/cola (caso negativo)",
+        "Test unitario: un payload de cancelación de ejemplo válida contra el schema; uno sin correlation_id es rechazado",
+        "./init.sh en verde"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 6,
+      "name": "observability",
+      "title": "Health checks del Broker y métricas de colas (RNF-09, RNF-10)",
+      "description": "Habilita, documenta y verifica que el estado del Broker (health check del nodo) y de sus colas (mensajes pendientes, consumidores activos, mensajes en dead-letter) se puedan monitorear, tal como exigen los requisitos no funcionales y el plan de pruebas del proyecto. Se apoya en la API de management ya expuesta desde la feature scaffolding.",
+      "acceptance": [
+        "docs/architecture.md o un README de observabilidad documenta los endpoints de la API de management a usar como mínimo: /api/healthchecks/node (estado del nodo) y /api/queues/<vhost>/<queue> (mensajes listos, consumidores activos, mensajes en la .dlq) para cada cola definida en las features 2 y 5",
+        "Se evalúa explícitamente si se habilita el plugin rabbitmq_prometheus en docker-compose.yml; la decisión (habilitarlo o no) queda justificada por escrito, no implícita",
+        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"]): el endpoint de healthcheck del nodo responde OK contra el contenedor de la topología ya definida",
+        "Test de integración: tras publicar N mensajes sin consumirlos en una cola conocida (p. ej. ms-nmap.scan-requests), la API de management reporta una profundidad de cola (messages_ready) igual a N",
+        "Test de integración: tras forzar que un mensaje agote sus reintentos (reutilizando el mecanismo de la feature 2) y caiga en una .dlq, la API de management refleja ese mensaje en la cola de dead-letter correspondiente",
+        "./init.sh en verde"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 7,
       "name": "deployment_docs",
       "title": "Documentación de despliegue real (sin código nuevo)",
-      "description": "Documenta cómo se aplica la topología (rabbitmq/definitions.json) y el TLS de esta feature a una instancia real de RabbitMQ fuera del docker-compose de desarrollo, análogo a la sección 'Despliegue' que ms-nmap tiene en su propio README/docs/architecture.md. Sin código ni tests nuevos.",
+      "description": "Documenta cómo se aplica la topología completa (rabbitmq/definitions.json, incluidas las features 2, 3, 5 y 6) a una instancia real de RabbitMQ fuera del docker-compose de desarrollo, análogo a la sección 'Despliegue' que ms-nmap tiene en su propio README/docs/architecture.md. Sin código ni tests nuevos.",
       "acceptance": [
         "README.md o docs/architecture.md documenta cómo cargar rabbitmq/definitions.json en una instancia real (management API load_definitions, o rabbitmqctl import_definitions, o el mecanismo del proveedor cloud elegido) sin asumir un proveedor si no se ha decidido",
-        "Se documenta explícitamente qué debe cambiar respecto al docker-compose local para producción: certificados TLS reales (no autofirmados), contraseñas de los usuarios de servicio gestionadas fuera del repo (variable de entorno o gestor de secretos), UI de management no expuesta públicamente",
+        "Se documenta explícitamente qué debe cambiar respecto al docker-compose local para producción: certificados TLS reales (no autofirmados), contraseñas de los usuarios de servicio gestionadas fuera del repo (variable de entorno o gestor de secretos), UI de management no expuesta públicamente, y cómo se conecta el monitoreo de la feature 6 a un sistema de alertas real si aplica",
         "Se documenta cómo cada servicio (gateway, ms-nmap, ms-analisis) debe configurarse para apuntar a la instancia real (host, vhost, usuario, y referencia a que las credenciales no viven en este repo)",
-        "No se añade código Rust nuevo ni tests nuevos en esta feature; si al escribir la documentación se detecta que falta algo verificable, se registra como feature nueva en vez de added aquí sin acordarlo",
-        "./init.sh en verde (sin cambios respecto a la feature 4)"
+        "No se añade código Rust nuevo ni tests nuevos en esta feature; si al escribir la documentación se detecta que falta algo verificable, se registra como feature nueva en vez de añadirse aquí sin acordarlo",
+        "./init.sh en verde (sin cambios respecto a la feature 6)"
       ],
       "status": "pending"
     }

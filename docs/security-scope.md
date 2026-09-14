@@ -93,6 +93,21 @@
   (Gateway/`ms-usuarios`), igual que documenta `ms-nmap` en su propio
   `docs/security-scope.md`.
 
+## Cobertura de las features añadidas en la ronda 2 (cancelación, observabilidad)
+
+- **`ScanCancellation`** (feature `cancellation_contract`, RF-14): lleva
+  `correlation_id` y `requested_by`, **nunca** una credencial — las mismas
+  reglas de TLS y mínimo privilegio de arriba aplican sin cambios. El
+  usuario `gateway` gana permiso de escritura sobre `scan.cancellations`;
+  ningún otro usuario tiene acceso.
+- **Observabilidad** (feature `observability`, RNF-09/RNF-10): los
+  endpoints de la API de management usados (`/api/healthchecks/node`,
+  `/api/queues/...`) exponen **conteos y metadatos** (profundidad de cola,
+  número de consumidores), nunca el cuerpo de los mensajes — no hay riesgo
+  adicional de fuga de la credencial SSH por esta vía. Aun así, la UI/API
+  de management sigue sin exponerse públicamente (ver "Usuarios y permisos
+  de mínimo privilegio" arriba).
+
 ## Si algo no está claro
 
 Si una feature de `feature_list.json` roza alguno de estos límites y no

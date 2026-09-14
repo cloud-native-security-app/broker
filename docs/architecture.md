@@ -15,19 +15,37 @@ Del diagrama de arquitectura del sistema (`Diagrama_Arquitectura_Solucion_
 Cloud_Native_I-Página-2`):
 
 ```
-Gateway ──(ScanRequest)──▶  Broker  ──▶  ms-nmap
-                                          │
-                                          ▼
-                              Broker  ◀── (ScanOutcome)
-                                │
-                                ▼
-                           ms-analisis
+Gateway ──(ScanRequest)──────────▶  Broker  ──▶  ms-nmap
+   ▲                                                │
+   │                                                │ (ScanOutcome: started/completed/failed)
+   │                                                ▼
+   └──────────────(gateway.scan-outcomes)───────  Broker  ──(ms-analisis.scan-outcomes:
+                                                      │       solo completed/failed)──▶ ms-analisis
+Gateway ──(ScanCancellation)─────▶  Broker  ──▶  ms-nmap
 ```
 
 `ms-usuarios` **no** pasa por el Broker: habla directo con el Gateway. Si en
 el futuro se necesita mensajería asíncrona para `ms-usuarios`, es una
 decisión de producto que se discute y se documenta como feature nueva — no
 se asume aquí.
+
+Ampliación 2026-09-14 (ronda 2, tras leer `documento_requerimientos.docx` y
+`Plan de pruebas Cloud Native_I.docx`): el diagrama original solo tenía
+`ScanRequest`/`ScanOutcome` en un sentido. Los requisitos oficiales del
+proyecto exigen además:
+- **RF-08** (notificación en tiempo real al frontend) → el Gateway también
+  **consume** desenlaces (cola `gateway.scan-outcomes`), no solo los publica
+  el lado de `ms-nmap` hacia `ms-analisis`.
+- **RF-07** (estado PENDIENTE/EN_PROGRESO/COMPLETADO/FALLIDO) → `ScanOutcome`
+  gana una tercera variante `started`, que solo le interesa al Gateway (para
+  reflejar EN_PROGRESO), no a `ms-analisis`.
+- **RF-14** (cancelar un escaneo activo) → un mensaje nuevo,
+  `ScanCancellation`, que el Gateway publica y `ms-nmap` consume.
+
+Ver "Contrato de mensajes" abajo para el detalle. **Importante:** que
+`ms-nmap` realmente publique `started` y consuma/honre la cancelación es
+trabajo pendiente en el repo `nmap-service` — no se implementa aquí, solo se
+define el canal y el contrato.
 
 ## Decisiones de diseño ya tomadas
 
@@ -72,6 +90,15 @@ se asume aquí.
   real — **nunca** contra un broker de producción, **nunca** con mocks.
   Este crate **no** produce un binario de producción ni una imagen Docker
   de servicio: es solo arnés de verificación.
+- **Reintentos limitados antes de dead-letter (RNF-06 y el plan de
+  pruebas del proyecto).** Un mensaje que falla su procesamiento se
+  reintenta un número acotado de veces (no una vez con TTL directo a DLQ)
+  antes de caer en su cola de mensajes fallidos — ver la feature
+  `topology_definition`.
+- **Observabilidad del Broker es un requisito explícito (RNF-09, RNF-10),
+  no un nice-to-have.** Health checks del nodo y métricas de cola
+  (mensajes pendientes, consumidores activos, mensajes en DLQ) deben ser
+  consultables vía la API de management — ver la feature `observability`.
 
 ## Capas / directorios
 
@@ -82,8 +109,8 @@ se asume aquí.
    colas de mensajes muertos (dead-letter), usuarios y sus permisos. Es la
    fuente de verdad de la topología real.
 3. **`contracts/`** — JSON Schema de cada tipo de mensaje (`ScanRequest`,
-   `ScanOutcome`) + documentación (`contracts/README.md`) de qué
-   exchange/routing-key transporta cada uno y quién publica/consume.
+   `ScanOutcome`, `ScanCancellation`) + documentación (`contracts/README.md`)
+   de qué exchange/routing-key transporta cada uno y quién publica/consume.
 4. **`src/`, `tests/`** — crate Rust de verificación. `tests/` prueba la
    topología y los permisos contra un contenedor real
    (`#[ignore = "requiere Docker"]`, igual convención que `ms-nmap`);
@@ -94,14 +121,18 @@ se asume aquí.
 No introducir capas adicionales hasta que haya una razón concreta
 documentada en `feature_list.json`.
 
-## Contrato de mensajes (referencia — se congela en la feature `message_contract`)
+## Contrato de mensajes (referencia — se congela en las features `message_contract` y `cancellation_contract`)
 
-Formato ya implementado y testeado en `ms-nmap` (`src/domain.rs`,
-`src/messaging/`). `contracts/` debe documentarlo **exactamente así**, sin
-inventar campos nuevos (p. ej. un `schema_version`) sin discutirlo antes con
-el usuario:
+`ScanRequest` y las variantes `completed`/`failed` de `ScanOutcome` ya están
+implementadas y testeadas en `ms-nmap` (`src/domain.rs`, `src/messaging/`).
+`contracts/` debe documentarlas **exactamente así**, sin inventar campos
+nuevos (p. ej. un `schema_version`) sin discutirlo antes con el usuario. La
+variante `started` de `ScanOutcome` y `ScanCancellation` son contrato
+**acordado pero pendiente de implementar en `ms-nmap`** — este repo define
+el canal y el schema, no la publicación/consumo real.
 
-**`ScanRequest`** (Gateway publica, `ms-nmap` consume):
+**`ScanRequest`** (exchange `scan.requests`, routing key `scan.request` —
+Gateway publica, `ms-nmap` consume):
 ```json
 {
   "correlation_id": "req-2026-0042",
@@ -115,13 +146,28 @@ el usuario:
 `ssh_credentials_ref` es la credencial SSH **real**, no una referencia
 opaca — ver `docs/security-scope.md`.
 
-**`ScanOutcome`** (`ms-nmap` publica, `ms-analisis` consume), internamente
-tageado por `status`:
+**`ScanOutcome`** (exchange `scan.outcomes`, internamente tageado por
+`status`) — `ms-nmap` publica; `ms-analisis` consume solo `completed`/
+`failed` (routing keys `scan.outcome.completed`/`scan.outcome.failed`);
+el Gateway consume las tres (`scan.outcome.#`, cola `gateway.scan-outcomes`,
+para reflejar PENDIENTE/EN_PROGRESO/COMPLETADO/FALLIDO en el frontend, RF-07/RF-08):
+```json
+{"status": "started", "correlation_id": "..."}
+```
 ```json
 {"status": "completed", "correlation_id": "...", "result": { "...ScanResult...": "" }}
 ```
 ```json
 {"status": "failed", "correlation_id": "...", "reason": "..."}
+```
+`started` es la única variante que `ms-nmap` **todavía no publica** — ver
+la nota de "trabajo pendiente" arriba.
+
+**`ScanCancellation`** (exchange `scan.cancellations`, routing key
+`scan.cancellation` — Gateway publica, `ms-nmap` consume; consumir y
+honrar la cancelación es trabajo pendiente en `ms-nmap`, RF-14):
+```json
+{"correlation_id": "req-2026-0042", "requested_by": "analyst@example.test"}
 ```
 
 ## Manejo de errores
