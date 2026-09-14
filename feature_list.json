@@ -1,0 +1,84 @@
+{
+  "features": [
+    {
+      "id": 1,
+      "name": "scaffolding",
+      "title": "Esqueleto del repo: docker-compose, directorios y crate de verificación",
+      "description": "Prepara la estructura base del repo antes de definir la topología real: docker-compose.yml con RabbitMQ local (imagen management pineada), los directorios vacíos rabbitmq/ y contracts/, y el Cargo.toml del crate de verificación (sin lógica todavía). No define exchanges/colas/usuarios reales ni el contrato de mensajes — eso son features siguientes.",
+      "acceptance": [
+        "Existe docker-compose.yml en la raíz con un servicio RabbitMQ usando la imagen oficial rabbitmq:<tag>-management, fijada por tag concreto (no latest)",
+        "El servicio expone al menos el puerto AMQP (5672) y el de la UI de management (15672) para desarrollo local; no se configuran credenciales reales, solo un usuario admin de laboratorio documentado como tal",
+        "Existen los directorios rabbitmq/ y contracts/, vacíos o con un README placeholder explicando qué contendrán las features siguientes",
+        "Existe Cargo.toml del crate de verificación (edition 2021+, sin binario de producción, sin dependencias todavía salvo las estrictamente necesarias para que el crate compile vacío)",
+        "Existe .gitignore cubriendo al menos /target, *.tmp y cualquier artefacto de certificados TLS de laboratorio (p. ej. *.pem, *.key generados localmente)",
+        "./init.sh llega en verde hasta donde puede: secciones 1-4 en OK, sección 5 (compilar/test/doc) en OK con un crate vacío (0 tests es válido aquí)",
+        "docker compose config valida docker-compose.yml sin error"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 2,
+      "name": "topology_definition",
+      "title": "Topología de RabbitMQ: exchanges, colas, bindings y usuarios de mínimo privilegio",
+      "description": "Define rabbitmq/definitions.json con la topología real que conecta Gateway -> ms-nmap y ms-nmap -> ms-analisis, y los usuarios de servicio con permisos acotados. docker-compose.yml carga este archivo al arrancar. Es la feature central: sin ella no hay Broker real que probar.",
+      "acceptance": [
+        "rabbitmq/definitions.json declara un vhost dedicado (p. ej. security-app) y, dentro de él: exchange scan.requests (topic) con su exchange de dead-letter scan.requests.dlx; exchange scan.outcomes (topic) con su dead-letter scan.outcomes.dlx",
+        "Cola ms-nmap.scan-requests bindeada a scan.requests con routing key scan.request, con x-dead-letter-exchange apuntando a scan.requests.dlx y su cola ms-nmap.scan-requests.dlq",
+        "Cola ms-analisis.scan-outcomes bindeada a scan.outcomes con routing key(s) scan.outcome.# (o equivalente), con su dead-letter scan.outcomes.dlx y cola ms-analisis.scan-outcomes.dlq",
+        "Tres usuarios de servicio (gateway, ms-nmap, ms-analisis), cada uno con contraseña de laboratorio (nunca real) y permisos (configure/write/read) acotados por regex SOLO a lo que su servicio necesita: gateway puede escribir en scan.requests pero no leer ms-nmap.scan-requests ni tocar scan.outcomes; ms-nmap puede leer su cola y escribir en scan.outcomes; ms-analisis solo puede leer su cola",
+        "docker-compose.yml monta/carga rabbitmq/definitions.json (vía RABBITMQ_LOAD_DEFINITIONS o el mecanismo equivalente de la imagen) al arrancar el contenedor",
+        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"]): levanta rabbitmq:management real con esta topología cargada y, conectando con lapin, verifica que exchanges/colas/bindings existen exactamente como se definieron",
+        "Test de integración: conectando como cada usuario de servicio, verifica el caso POSITIVO (puede publicar/consumir lo suyo) y el caso NEGATIVO (acceso denegado a la cola/exchange de otro servicio) para los 3 usuarios",
+        "Test de integración: un mensaje publicado en ms-nmap.scan-requests que se rechaza (nack sin requeue) o agota su TTL termina en ms-nmap.scan-requests.dlq",
+        "./init.sh en verde: cargo fmt/clippy/test/test --ignored/doc limpios"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 3,
+      "name": "tls",
+      "title": "TLS (AMQPS) obligatorio para todas las conexiones",
+      "description": "Habilita AMQPS en el docker-compose local con un certificado autofirmado de laboratorio, y documenta que toda conexión de producción debe ser TLS porque el ScanRequest transporta una credencial SSH real (ver docs/security-scope.md). AMQP en claro queda deshabilitado o explícitamente marcado solo-dev.",
+      "acceptance": [
+        "docker-compose.yml habilita el listener AMQPS (puerto 5671) de RabbitMQ con un certificado/clave autofirmados de laboratorio, generados por un script documentado o incluidos como fixture claramente marcada como no-real",
+        "El certificado/clave de laboratorio NO se reutiliza como si fuera válido para producción; docs/architecture.md o un README de despliegue documenta explícitamente qué cambia para usar certificados reales",
+        "Si el puerto AMQP en claro (5672) sigue expuesto en el compose local, queda marcado explícitamente como solo-desarrollo/depuración en la documentación",
+        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"]): una conexión AMQPS con el certificado de laboratorio (o su CA) conecta correctamente y puede operar sobre la topología de la feature 2",
+        "Test o documentación (si la imagen usada complica probarlo) de que una conexión sin TLS al puerto AMQPS es rechazada; si se documenta como limitación en vez de testearse, la razón queda explícita",
+        "docs/security-scope.md ya cubre esto (no requiere cambios) — esta feature es la implementación de esa política",
+        "./init.sh en verde"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 4,
+      "name": "message_contract",
+      "title": "Contrato de mensajes: JSON Schema de ScanRequest y ScanOutcome",
+      "description": "Congela y documenta en contracts/ el formato exacto de ScanRequest y ScanOutcome, copiado literalmente de lo que ms-nmap ya implementa y testea (src/domain.rs, src/messaging/). Incluye qué exchange/routing-key transporta cada mensaje y quién publica/consume. Sin política de versionado nueva (no se inventa schema_version sin acordarlo).",
+      "acceptance": [
+        "contracts/scan-request.schema.json: JSON Schema (draft 2020-12 o el que se decida y documente) que valida exactamente el shape real de ScanRequest en ms-nmap: correlation_id (string), ip (string, formato IPv4 o IPv6), network_user (string), ssh_credentials_ref (string), has_sudo (boolean), requested_by (string); todos requeridos, sin propiedades adicionales no documentadas",
+        "contracts/scan-outcome.schema.json: JSON Schema que valida el shape real de ScanOutcome (tageado por status): {status: \"completed\", correlation_id, result: {...}} o {status: \"failed\", correlation_id, reason}; no se re-deriva el shape interno de ScanResult desde cero sin contrastarlo con ms-nmap",
+        "contracts/README.md documenta: qué exchange/routing-key transporta cada mensaje (según rabbitmq/definitions.json de la feature 2), quién publica y quién consume cada uno, y una nota explícita de que el contrato es una copia del que ya implementa ms-nmap, no una fuente independiente",
+        "Nota explícita (en contracts/README.md o docs/architecture.md) de que no hay campo de versión de schema todavía y que cualquier cambio de formato debe ser aditivo hasta que se decida una política de versionado",
+        "Tests unitarios (sin Docker): payloads de ejemplo (incluido uno con un ssh_credentials_ref de laboratorio, nunca real) validan correctamente contra scan-request.schema.json; payloads completed y failed de ejemplo validan contra scan-outcome.schema.json; un payload inválido (falta un campo requerido) es rechazado por el validador con un mensaje claro",
+        "Test de integración (testcontainers, #[ignore = \"requiere Docker\"], smoke end-to-end del contrato): publica un ScanRequest de ejemplo válido en scan.requests y verifica que llega íntegro a ms-nmap.scan-requests; publica un ScanOutcome completed y otro failed en scan.outcomes y verifica que ambos llegan a ms-analisis.scan-outcomes",
+        "./init.sh en verde"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": 5,
+      "name": "deployment_docs",
+      "title": "Documentación de despliegue real (sin código nuevo)",
+      "description": "Documenta cómo se aplica la topología (rabbitmq/definitions.json) y el TLS de esta feature a una instancia real de RabbitMQ fuera del docker-compose de desarrollo, análogo a la sección 'Despliegue' que ms-nmap tiene en su propio README/docs/architecture.md. Sin código ni tests nuevos.",
+      "acceptance": [
+        "README.md o docs/architecture.md documenta cómo cargar rabbitmq/definitions.json en una instancia real (management API load_definitions, o rabbitmqctl import_definitions, o el mecanismo del proveedor cloud elegido) sin asumir un proveedor si no se ha decidido",
+        "Se documenta explícitamente qué debe cambiar respecto al docker-compose local para producción: certificados TLS reales (no autofirmados), contraseñas de los usuarios de servicio gestionadas fuera del repo (variable de entorno o gestor de secretos), UI de management no expuesta públicamente",
+        "Se documenta cómo cada servicio (gateway, ms-nmap, ms-analisis) debe configurarse para apuntar a la instancia real (host, vhost, usuario, y referencia a que las credenciales no viven en este repo)",
+        "No se añade código Rust nuevo ni tests nuevos en esta feature; si al escribir la documentación se detecta que falta algo verificable, se registra como feature nueva en vez de added aquí sin acordarlo",
+        "./init.sh en verde (sin cambios respecto a la feature 4)"
+      ],
+      "status": "pending"
+    }
+  ]
+}
