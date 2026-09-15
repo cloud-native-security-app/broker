@@ -35,7 +35,7 @@
         "Test de integración: un mensaje que agota el número máximo de reintentos configurado (no un TTL único) termina en la .dlq correspondiente; se verifica que efectivamente pasó por el ciclo de reintentos (no cayó directo a la primera)",
         "./init.sh en verde: cargo fmt/clippy/test/test --ignored/doc limpios"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 3,

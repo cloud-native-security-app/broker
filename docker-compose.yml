@@ -7,19 +7,28 @@
 #
 # Puerto 5672 (AMQP en claro): expuesto aquí solo para desarrollo/depuración
 # local. TLS (AMQPS, puerto 5671) se habilita en la feature `tls` — hasta
-# entonces no hay topología ni credenciales reales que proteger porque este
-# compose todavía no carga rabbitmq/definitions.json (feature
-# `topology_definition`).
+# entonces esta es la única forma de conectar en el compose local.
+#
+# Desde la feature `topology_definition`, la topología completa (vhost
+# security-app, exchanges, colas, bindings y usuarios — incluido el usuario
+# admin `lab-admin`) vive únicamente en rabbitmq/definitions.json, cargado
+# vía rabbitmq/rabbitmq.conf (`load_definitions`, ver ese archivo para por
+# qué no se usa `management.load_definitions` ni `RABBITMQ_LOAD_DEFINITIONS`
+# — esta última variable es específica de la imagen Bitnami, no de la
+# imagen oficial que usa este repo). Ya no se usan las variables de entorno
+# RABBITMQ_DEFAULT_USER/RABBITMQ_DEFAULT_PASS: mantenerlas junto a un
+# `definitions.json` que también declara usuarios crea una fuente de verdad
+# duplicada; el usuario `lab-admin` (mismas credenciales de laboratorio de
+# la feature `scaffolding`: usuario `lab-admin`, contraseña
+# `lab-only-not-a-real-secret`) se declara ahora en
+# rabbitmq/definitions.json, con permisos completos sobre el vhost
+# `security-app` — ver rabbitmq/README.md.
 services:
   rabbitmq:
     image: rabbitmq:4.3.5-management
     ports:
       - "5672:5672" # AMQP — solo desarrollo/depuración local, ver nota arriba
       - "15672:15672" # UI de management, solo desarrollo local
-    environment:
-      # Credenciales de LABORATORIO, NO reales, NO válidas para producción.
-      # Solo sirven para levantar el contenedor local/de tests. En
-      # producción las credenciales se gestionan fuera de este repo (ver
-      # docs/architecture.md, feature `deployment_docs`).
-      RABBITMQ_DEFAULT_USER: lab-admin
-      RABBITMQ_DEFAULT_PASS: lab-only-not-a-real-secret
+    volumes:
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro

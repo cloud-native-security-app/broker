@@ -9,12 +9,12 @@
 
 ## Plan
 
-(vacío)
+- (vacío)
 
 ## Bitácora
 
-(vacío)
+- (vacío)
 
 ## Próximo paso
 
-(vacío)
+- (vacío)
