@@ -1,0 +1,8 @@
+[package]
+name = "broker-verification"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Crate de verificación de la topología y el contrato de mensajes del Broker (testcontainers + lapin). No es una librería compartida ni produce un binario de producción."
+
+[dependencies]

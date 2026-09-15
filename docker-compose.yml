@@ -1,0 +1,25 @@
+# Entorno de referencia LOCAL para desarrollo y para los tests de
+# integración (testcontainers usa esta misma imagen, pineada por tag, para
+# levantar sus propios contenedores efímeros — este compose es para
+# desarrollo manual, p. ej. inspeccionar la UI de management).
+#
+# NO es un despliegue de producción. Ver docs/architecture.md.
+#
+# Puerto 5672 (AMQP en claro): expuesto aquí solo para desarrollo/depuración
+# local. TLS (AMQPS, puerto 5671) se habilita en la feature `tls` — hasta
+# entonces no hay topología ni credenciales reales que proteger porque este
+# compose todavía no carga rabbitmq/definitions.json (feature
+# `topology_definition`).
+services:
+  rabbitmq:
+    image: rabbitmq:4.3.5-management
+    ports:
+      - "5672:5672" # AMQP — solo desarrollo/depuración local, ver nota arriba
+      - "15672:15672" # UI de management, solo desarrollo local
+    environment:
+      # Credenciales de LABORATORIO, NO reales, NO válidas para producción.
+      # Solo sirven para levantar el contenedor local/de tests. En
+      # producción las credenciales se gestionan fuera de este repo (ver
+      # docs/architecture.md, feature `deployment_docs`).
+      RABBITMQ_DEFAULT_USER: lab-admin
+      RABBITMQ_DEFAULT_PASS: lab-only-not-a-real-secret

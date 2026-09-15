@@ -14,7 +14,7 @@
         "./init.sh llega en verde hasta donde puede: secciones 1-4 en OK, sección 5 (compilar/test/doc) en OK con un crate vacío (0 tests es válido aquí)",
         "docker compose config valida docker-compose.yml sin error"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 2,
