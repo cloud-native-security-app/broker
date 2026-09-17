@@ -22,6 +22,11 @@ pub const SCAN_REQUEST_SCHEMA: &str = include_str!("../contracts/scan-request.sc
 /// `contracts/scan-outcome.schema.json` y `contracts/README.md`).
 pub const SCAN_OUTCOME_SCHEMA: &str = include_str!("../contracts/scan-outcome.schema.json");
 
+/// JSON Schema de `ScanCancellation` (RF-14, ver
+/// `contracts/scan-cancellation.schema.json` y `contracts/README.md`).
+pub const SCAN_CANCELLATION_SCHEMA: &str =
+    include_str!("../contracts/scan-cancellation.schema.json");
+
 /// Errores propios de la validación de un payload contra su JSON Schema.
 #[derive(Debug, thiserror::Error)]
 pub enum ContractError {
@@ -48,6 +53,11 @@ fn scan_request_validator() -> &'static Validator {
 fn scan_outcome_validator() -> &'static Validator {
     static VALIDATOR: OnceLock<Validator> = OnceLock::new();
     VALIDATOR.get_or_init(|| compile("scan-outcome.schema.json", SCAN_OUTCOME_SCHEMA))
+}
+
+fn scan_cancellation_validator() -> &'static Validator {
+    static VALIDATOR: OnceLock<Validator> = OnceLock::new();
+    VALIDATOR.get_or_init(|| compile("scan-cancellation.schema.json", SCAN_CANCELLATION_SCHEMA))
 }
 
 /// Valida `payload` contra `contracts/scan-request.schema.json`.
@@ -77,6 +87,21 @@ pub fn validate_scan_outcome(payload: &Value) -> Result<(), ContractError> {
         .validate(payload)
         .map_err(|err| ContractError::SchemaViolation {
             schema: "scan-outcome.schema.json".to_string(),
+            detail: err.to_string(),
+        })
+}
+
+/// Valida `payload` contra `contracts/scan-cancellation.schema.json`.
+///
+/// # Errors
+///
+/// Devuelve [`ContractError::SchemaViolation`] con el detalle del primer
+/// error de validación si `payload` no cumple el schema.
+pub fn validate_scan_cancellation(payload: &Value) -> Result<(), ContractError> {
+    scan_cancellation_validator()
+        .validate(payload)
+        .map_err(|err| ContractError::SchemaViolation {
+            schema: "scan-cancellation.schema.json".to_string(),
             detail: err.to_string(),
         })
 }
@@ -295,6 +320,72 @@ mod tests {
         assert!(
             validate_scan_outcome(&payload).is_err(),
             "un status fuera de started/completed/failed debe ser inválido"
+        );
+    }
+
+    /// Shape acordado para RF-14 (`cancellation_contract`) — ver
+    /// `contracts/README.md` §`ScanCancellation`.
+    fn valid_scan_cancellation() -> Value {
+        json!({
+            "correlation_id": "req-2026-0042",
+            "requested_by": "analyst@example.test"
+        })
+    }
+
+    #[test]
+    fn valid_scan_cancellation_passes() {
+        assert!(
+            validate_scan_cancellation(&valid_scan_cancellation()).is_ok(),
+            "un ScanCancellation válido debe pasar el schema"
+        );
+    }
+
+    #[test]
+    fn scan_cancellation_missing_correlation_id_is_rejected() {
+        let mut payload = valid_scan_cancellation();
+        payload
+            .as_object_mut()
+            .expect("payload es un objeto")
+            .remove("correlation_id");
+
+        let result = validate_scan_cancellation(&payload);
+        let err = result.expect_err("un ScanCancellation sin correlation_id debe ser inválido");
+        let message = err.to_string();
+        assert!(
+            message.contains("scan-cancellation.schema.json"),
+            "el mensaje de error debe identificar el schema violado: {message}"
+        );
+    }
+
+    #[test]
+    fn scan_cancellation_missing_requested_by_is_rejected() {
+        let mut payload = valid_scan_cancellation();
+        payload
+            .as_object_mut()
+            .expect("payload es un objeto")
+            .remove("requested_by");
+
+        assert!(
+            validate_scan_cancellation(&payload).is_err(),
+            "un ScanCancellation sin requested_by debe ser inválido"
+        );
+    }
+
+    #[test]
+    fn scan_cancellation_with_unknown_extra_field_is_rejected() {
+        let mut payload = valid_scan_cancellation();
+        payload
+            .as_object_mut()
+            .expect("payload es un objeto")
+            .insert(
+                "ssh_credentials_ref".to_string(),
+                json!("should-never-be-here"),
+            );
+
+        assert!(
+            validate_scan_cancellation(&payload).is_err(),
+            "additionalProperties: false debe rechazar campos no documentados, en particular \
+             cualquier intento de colar una credencial en este mensaje"
         );
     }
 }

@@ -1,8 +1,10 @@
 //! Verifica que la topología cargada en un `rabbitmq:management` real
-//! coincide exactamente con `rabbitmq/definitions.json`: los 4 exchanges
-//! (con sus DLX), las 6 colas (3 principales + 3 `.dlq`) y los 7 bindings
+//! coincide exactamente con `rabbitmq/definitions.json`: los 6 exchanges
+//! (con sus DLX), las 8 colas (4 principales + 4 `.dlq`) y los 9 bindings
 //! — incluidos los bindings diferenciados de `scan.outcomes` (routing keys
-//! distintas para `ms-analisis.scan-outcomes` y `gateway.scan-outcomes`).
+//! distintas para `ms-analisis.scan-outcomes` y `gateway.scan-outcomes`) y
+//! el canal de `scan.cancellations` de la feature `cancellation_contract`
+//! (RF-14).
 //!
 //! Se consulta la API HTTP de management (autenticada como `lab-admin`,
 //! nunca con un usuario de servicio — ver `docs/security-scope.md`) porque
@@ -63,6 +65,8 @@ async fn topology_matches_definitions_json_exactly() {
         "scan.requests.dlx",
         "scan.outcomes",
         "scan.outcomes.dlx",
+        "scan.cancellations",
+        "scan.cancellations.dlx",
     ] {
         assert!(
             exchange_names.contains(expected),
@@ -83,10 +87,12 @@ async fn topology_matches_definitions_json_exactly() {
     };
     assert_eq!(exchange_type("scan.requests"), "topic");
     assert_eq!(exchange_type("scan.outcomes"), "topic");
+    assert_eq!(exchange_type("scan.cancellations"), "topic");
     assert_eq!(exchange_type("scan.requests.dlx"), "direct");
     assert_eq!(exchange_type("scan.outcomes.dlx"), "direct");
+    assert_eq!(exchange_type("scan.cancellations.dlx"), "direct");
 
-    // --- Colas: existen exactamente las 6 esperadas (3 principales + 3 .dlq) ---
+    // --- Colas: existen exactamente las 8 esperadas (4 principales + 4 .dlq) ---
     let queues = get_json(&client, &base, &format!("/queues/{VHOST}")).await;
     let queue_names = names(&queues);
     let expected_queues: BTreeSet<String> = [
@@ -96,6 +102,8 @@ async fn topology_matches_definitions_json_exactly() {
         "ms-analisis.scan-outcomes.dlq",
         "gateway.scan-outcomes",
         "gateway.scan-outcomes.dlq",
+        "ms-nmap.scan-cancellations",
+        "ms-nmap.scan-cancellations.dlq",
     ]
     .into_iter()
     .map(String::from)
@@ -132,6 +140,11 @@ async fn topology_matches_definitions_json_exactly() {
             "scan.outcomes.dlx",
             "gateway.scan-outcomes.dead",
         ),
+        (
+            "ms-nmap.scan-cancellations",
+            "scan.cancellations.dlx",
+            "ms-nmap.scan-cancellations.dead",
+        ),
     ];
     for (queue, dlx, dead_routing_key) in main_queues {
         let args = queue_arguments(queue);
@@ -150,7 +163,7 @@ async fn topology_matches_definitions_json_exactly() {
         );
     }
 
-    // --- Bindings: exactamente los 7 esperados, con las routing keys diferenciadas ---
+    // --- Bindings: exactamente los 9 esperados, con las routing keys diferenciadas ---
     let bindings = get_json(&client, &base, &format!("/bindings/{VHOST}")).await;
     let binding_tuples: BTreeSet<(String, String, String)> = bindings
         .as_array()
@@ -193,6 +206,16 @@ async fn topology_matches_definitions_json_exactly() {
             "scan.outcomes.dlx",
             "gateway.scan-outcomes.dlq",
             "gateway.scan-outcomes.dead",
+        ),
+        (
+            "scan.cancellations",
+            "ms-nmap.scan-cancellations",
+            "scan.cancellation",
+        ),
+        (
+            "scan.cancellations.dlx",
+            "ms-nmap.scan-cancellations.dlq",
+            "ms-nmap.scan-cancellations.dead",
         ),
     ]
     .into_iter()

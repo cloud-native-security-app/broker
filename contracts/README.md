@@ -15,9 +15,7 @@ hermano `nmap-service`) para el rastro de esa verificación.
 |---|---|---|
 | [`scan-request.schema.json`](./scan-request.schema.json) | `ScanRequest` | Implementado y publicado en `ms-nmap` |
 | [`scan-outcome.schema.json`](./scan-outcome.schema.json) | `ScanOutcome` (`started`/`completed`/`failed`) | `completed`/`failed` implementados; `started` **PENDIENTE** (ver abajo) |
-
-`scan-cancellation.schema.json` (`ScanCancellation`) se define en la feature
-`cancellation_contract` (id 5), fuera de alcance de esta feature.
+| [`scan-cancellation.schema.json`](./scan-cancellation.schema.json) | `ScanCancellation` | Canal y schema definidos aquí; consumo/honra en `ms-nmap` **PENDIENTE** (ver abajo) |
 
 ## `ScanRequest`
 
@@ -108,6 +106,41 @@ defecto). Por eso `scan-outcome.schema.json` los marca como `required` en
 lo que `ms-nmap` efectivamente emite. Si en el futuro se decide relajar esto
 (permitir que falten en el mensaje del Broker), es un cambio de contrato a
 discutir explícitamente, no una corrección silenciosa de este README.
+
+## `ScanCancellation`
+
+- **Exchange:** `scan.cancellations` (topic), con su dead-letter
+  `scan.cancellations.dlx` (`direct`).
+- **Routing key:** `scan.cancellation`.
+- **Publica:** Gateway.
+- **Consume:** `ms-nmap` (cola `ms-nmap.scan-cancellations`, con su propia
+  `ms-nmap.scan-cancellations.dlq` y el mismo patrón de reintentos acotados
+  —`x-delivery-limit: 3`, N ya justificado en `rabbitmq/README.md`— que las
+  colas de la feature `topology_definition`).
+- **Campos:** `correlation_id` (el del escaneo/`ScanRequest` a cancelar,
+  mismo shape que en `ScanRequest`) y `requested_by`, ambos `required`,
+  `additionalProperties: false`. Deliberadamente mínimo: **nunca** lleva una
+  credencial ni ningún otro dato del escaneo — ver
+  `docs/security-scope.md` §"Cobertura de las features añadidas en la ronda
+  2".
+
+```json
+{"correlation_id": "req-2026-0042", "requested_by": "analyst@example.test"}
+```
+
+### Consumo y cancelación real — trabajo PENDIENTE en `nmap-service`
+
+Este repo define el canal (exchange, routing key, cola, permisos) y el
+schema, y el usuario `gateway` ya puede publicar en él. Pero **`ms-nmap` no
+consume ni honra todavía este mensaje**: a día de hoy
+`nmap-service/src/messaging/consumer.rs` solo implementa
+`ScanRequestSource`/`parse_scan_request` para `ScanRequest` — no existe
+ningún tipo, trait ni lógica para leer `ms-nmap.scan-cancellations` ni para
+abortar un pipeline de escaneo en ejecución (confirmado leyendo ese archivo
+en el repo `nmap-service`, de solo lectura desde aquí). Implementar el
+consumo y, sobre todo, abortar realmente el escaneo activo (RF-14) es
+trabajo pendiente en `nmap-service`, fuera de alcance de este repo — igual
+que la variante `started` de `ScanOutcome` (ver arriba).
 
 ## Sin `schema_version` (nota de versionado)
 

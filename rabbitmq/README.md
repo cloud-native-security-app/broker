@@ -46,12 +46,20 @@ Vhost dedicado: **`security-app`**.
 |---|---|---|
 | `scan.requests` | `topic` | `scan.requests.dlx` (`direct`) |
 | `scan.outcomes` | `topic` | `scan.outcomes.dlx` (`direct`) |
+| `scan.cancellations` | `topic` | `scan.cancellations.dlx` (`direct`) |
 
 | Cola | Bindeada a | Routing key(s) | Dead-letter queue |
 |---|---|---|---|
 | `ms-nmap.scan-requests` | `scan.requests` | `scan.request` | `ms-nmap.scan-requests.dlq` |
 | `ms-analisis.scan-outcomes` | `scan.outcomes` | `scan.outcome.completed`, `scan.outcome.failed` (**nunca** `scan.outcome.started`) | `ms-analisis.scan-outcomes.dlq` |
 | `gateway.scan-outcomes` | `scan.outcomes` | `scan.outcome.#` (started, completed, failed) | `gateway.scan-outcomes.dlq` |
+| `ms-nmap.scan-cancellations` | `scan.cancellations` | `scan.cancellation` | `ms-nmap.scan-cancellations.dlq` |
+
+`ms-nmap.scan-cancellations` (feature `cancellation_contract`, RF-14) es el
+canal por el que el Gateway pide cancelar un escaneo en curso; ver
+`contracts/README.md` §`ScanCancellation` — `ms-nmap` consumir y honrar la
+cancelación es trabajo pendiente en el repo `nmap-service`, no implementado
+todavía.
 
 `gateway.scan-outcomes` es lo que permite al Gateway notificar al frontend
 en tiempo real (RF-08) y reflejar los cuatro estados PENDIENTE/EN_PROGRESO/
@@ -66,7 +74,8 @@ routing key de dead-letter), no hace falta el matching por patrones de un
 ## Reintentos acotados antes de `.dlq` (RNF-06)
 
 Cada cola principal (`ms-nmap.scan-requests`, `ms-analisis.scan-outcomes`,
-`gateway.scan-outcomes`) es una **cola quorum** (`"x-queue-type": "quorum"`)
+`gateway.scan-outcomes`, `ms-nmap.scan-cancellations`) es una **cola
+quorum** (`"x-queue-type": "quorum"`)
 con:
 
 ```json
@@ -119,17 +128,19 @@ compartido; permisos `configure`/`write`/`read` acotados por regex
 | Usuario | `configure` | `write` | `read` |
 |---|---|---|---|
 | `lab-admin` (administrador) | `.*` | `.*` | `.*` |
-| `gateway` | `^$` | `^scan\.requests$` | `^gateway\.scan-outcomes$` |
-| `ms-nmap` | `^$` | `^scan\.outcomes$` | `^ms-nmap\.scan-requests$` |
+| `gateway` | `^$` | `^scan\.(requests\|cancellations)$` | `^gateway\.scan-outcomes$` |
+| `ms-nmap` | `^$` | `^scan\.outcomes$` | `^ms-nmap\.(scan-requests\|scan-cancellations)$` |
 | `ms-analisis` | `^$` | `^$` | `^ms-analisis\.scan-outcomes$` |
 
 Ningún usuario de servicio puede leer la cola de otro servicio ni escribir
-fuera de su exchange: `gateway` no puede leer `ms-nmap.scan-requests` ni
-`ms-analisis.scan-outcomes`; `ms-nmap` no puede escribir en `scan.requests`
-ni leer las colas de `gateway`/`ms-analisis`; `ms-analisis` no puede
-escribir nada. `configure: "^$"` en los tres usuarios de servicio: ninguno
-declara/borra topología — eso solo lo hace `definitions.json` (vía el
-usuario `lab-admin`).
+fuera de su exchange: `gateway` no puede leer `ms-nmap.scan-requests`,
+`ms-nmap.scan-cancellations` ni `ms-analisis.scan-outcomes`; `ms-nmap` no
+puede escribir en `scan.requests` ni leer las colas de
+`gateway`/`ms-analisis`; `ms-analisis` no puede escribir nada ni tiene
+ningún acceso a `scan.cancellations`/`ms-nmap.scan-cancellations` (feature
+`cancellation_contract`). `configure: "^$"` en los tres usuarios de
+servicio: ninguno declara/borra topología — eso solo lo hace
+`definitions.json` (vía el usuario `lab-admin`).
 
 ## Credenciales de laboratorio (NUNCA reales)
 

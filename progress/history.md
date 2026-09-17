@@ -241,3 +241,67 @@
   solo tras los tests; `docker compose ps -a` no muestra servicios
   levantados). Sin archivos temporales sueltos.
 - **Fecha:** 2026-09-17.
+
+---
+
+## 2026-09-17 — Feature 5 `cancellation_contract` — DONE
+
+- **Feature completada:** id 5, `cancellation_contract` (RF-14) — canal y
+  contrato para que el Gateway pueda publicar la cancelación de un escaneo
+  activo; `ms-nmap` consume el mensaje, pero abortar el pipeline en curso
+  queda, como estaba previsto desde el inicio, como trabajo PENDIENTE en el
+  repo `nmap-service`.
+- **Qué se creó:**
+  - `rabbitmq/definitions.json`: exchange `scan.cancellations` (`topic`) con
+    su dead-letter `scan.cancellations.dlx` (`direct`); cola quorum
+    `ms-nmap.scan-cancellations` bindeada con routing key
+    `scan.cancellation`, con `x-delivery-limit: 3` — el mismo patrón de
+    reintentos acotados ya justificado en la feature 2 (`topology_definition`),
+    sin reinventarlo — y su `ms-nmap.scan-cancellations.dlq`.
+  - Permisos ampliados exactamente al mínimo necesario: `gateway.write` pasó
+    de `^scan\.requests$` a `^scan\.(requests|cancellations)$`; `ms-nmap.read`
+    pasó de `^ms-nmap\.scan-requests$` a
+    `^ms-nmap\.(scan-requests|scan-cancellations)$`. Los permisos de
+    `ms-analisis` no se tocaron en absoluto (confirmado por `git diff`);
+    ningún otro usuario tiene acceso al nuevo exchange/cola.
+  - `contracts/scan-cancellation.schema.json` (nuevo, draft 2020-12): schema
+    mínimo con `correlation_id`+`requested_by`, ambos `required`,
+    `additionalProperties: false` — deliberadamente sin ningún campo de
+    credencial ni dato adicional del escaneo.
+  - `contracts/README.md`/`rabbitmq/README.md` actualizados con la nueva
+    sección/filas de `ScanCancellation` (exchange/routing-key/publicador
+    Gateway/consumidor ms-nmap) y una nota explícita, confirmada
+    independientemente contra el código real de
+    `nmap-service/src/messaging/consumer.rs` (solo lectura, ese repo no se
+    tocó), de que consumir y honrar la cancelación es trabajo PENDIENTE en
+    `nmap-service`.
+  - `src/contracts.rs`: `validate_scan_cancellation` + 4 tests unitarios
+    (válido, falta `correlation_id`, falta `requested_by`, campo extra tipo
+    `ssh_credentials_ref` rechazado — refuerza la regla de que este mensaje
+    nunca lleva una credencial).
+  - `tests/topology_exists.rs` actualizado a la topología ampliada (6
+    exchanges, 8 colas, 9 bindings); `tests/cancellation.rs` nuevo con 3
+    tests de integración `#[ignore = "requiere Docker"]`: positivo
+    (`gateway` publica y el mensaje llega íntegro a
+    `ms-nmap.scan-cancellations`) y dos negativos (`ms-analisis` no puede
+    publicar ni leer; `ms-nmap` no puede escribir en el exchange).
+- **Veredicto del reviewer:** APPROVED, sin cambios requeridos
+  (`progress/review_cancellation_contract.md`). Verificó permisos, topología,
+  schema y ambos tests (unitarios e integración) contra Docker real
+  (`./init.sh` completo dos veces: 15/15 unitarios, 17/17 de integración,
+  `cargo fmt`/`clippy -D warnings`/`doc` limpios, `docker compose config`
+  válido), y confirmó independientemente contra
+  `nmap-service/src/messaging/consumer.rs` que la nota de "trabajo
+  pendiente" es honesta (ningún tipo/trait/lógica ahí para leer
+  `ms-nmap.scan-cancellations` ni abortar un escaneo). Contrastó los 6
+  criterios de aceptación de la feature 5 uno a uno — todos cumplidos, sin
+  ampliación de alcance no justificada (`ms-analisis` intacto, TLS/
+  `docker-compose.yml` no tocados).
+- **Cierre de sesión:** `./init.sh` re-ejecutado en verde de punta a punta
+  (15/15 tests unitarios + 17/17 tests de integración contra Docker real,
+  incluidos los 3 nuevos de `cancellation.rs`). `feature_list.json` id 5 →
+  `status: "done"`. Sin contenedores/volúmenes Docker huérfanos de esta
+  sesión (`docker ps -a` no muestra ningún contenedor de este repo;
+  testcontainers se limpió solo tras los tests). Sin archivos temporales
+  sueltos.
+- **Fecha:** 2026-09-17.

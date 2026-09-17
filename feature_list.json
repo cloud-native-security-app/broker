@@ -84,7 +84,7 @@
         "Test unitario: un payload de cancelación de ejemplo válida contra el schema; uno sin correlation_id es rechazado",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 6,
