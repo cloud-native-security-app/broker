@@ -51,7 +51,7 @@
         "docs/security-scope.md ya cubre esto (no requiere cambios) — esta feature es la implementación de esa política",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 4,

@@ -165,6 +165,105 @@ usuario `lab-admin` vía las variables de entorno
 fuente de verdad sin necesidad; las credenciales de `lab-admin` no
 cambiaron.
 
+## TLS (AMQPS, feature `tls`)
+
+Toda conexión de producción a este Broker debe usar AMQPS (TLS), nunca
+AMQP en claro — el `ScanRequest` que atraviesa `scan.requests` lleva una
+credencial SSH real en `ssh_credentials_ref` (ver `docs/security-scope.md`).
+
+### Setup (paso obligatorio antes de `docker compose up`)
+
+Los certificados de laboratorio **no se commitean** al repo (`.gitignore`
+cubre `*.pem`/`*.key` desde la feature `scaffolding`): son regenerables y
+la clave privada, aunque sea de laboratorio, no se versiona por higiene.
+Antes de levantar el stack por primera vez (o si `rabbitmq/tls/` no
+existe):
+
+```bash
+./rabbitmq/generate-lab-certs.sh
+```
+
+Esto genera, en `rabbitmq/tls/` (usando `openssl`, sin dependencias
+externas):
+
+| Archivo | Contenido |
+|---|---|
+| `ca_certificate.pem` | CA de laboratorio autofirmada (pública) |
+| `ca_key.pem` | Clave privada de la CA de laboratorio |
+| `server_certificate.pem` | Certificado de servidor, firmado por la CA de arriba, con SAN `DNS:rabbitmq,DNS:localhost,IP:127.0.0.1` |
+| `server_key.pem` | Clave privada del servidor |
+
+**NO usar en producción**: el `CN`/`O` del subject (`O=security-app-lab`,
+`CN=security-app-lab-CA` / `CN=rabbitmq`) deja explícito que es material de
+laboratorio, y la clave privada de la CA queda en texto plano en disco —
+aceptable solo para un contenedor RabbitMQ desechable de desarrollo/test.
+
+### Configuración del listener
+
+`rabbitmq/rabbitmq.conf` habilita el listener AMQPS en el puerto 5671:
+
+```ini
+listeners.ssl.default = 5671
+
+ssl_options.cacertfile = /etc/rabbitmq/tls/ca_certificate.pem
+ssl_options.certfile   = /etc/rabbitmq/tls/server_certificate.pem
+ssl_options.keyfile    = /etc/rabbitmq/tls/server_key.pem
+```
+
+Sin `ssl_options.verify`/`ssl_options.fail_if_no_peer_cert`: RabbitMQ usa
+por defecto `verify_none` (TLS de transporte servidor, sin exigir
+certificado de cliente/mTLS) — suficiente para el requisito de
+`docs/security-scope.md` ("toda conexión debe usar AMQPS"), que no exige
+autenticación mutua por certificado.
+
+`docker-compose.yml` monta `rabbitmq/tls/` completo en
+`/etc/rabbitmq/tls:ro`, igual patrón que `definitions.json`/`rabbitmq.conf`.
+Los tests de integración de `tests/` (vía `testcontainers`) montan los
+mismos archivos en sus propios contenedores efímeros.
+
+### Puerto 5672 (AMQP en claro) — solo desarrollo/depuración
+
+`docker-compose.yml` sigue publicando el puerto 5672 sin TLS, marcado
+explícitamente como solo-desarrollo/depuración (p. ej. para
+`rabbitmqctl`/herramientas locales que no manejan TLS). **Ningún servicio
+real** (`gateway`, `ms-nmap`, `ms-analisis`) debe conectarse por ahí: la
+única forma válida de operar contra este Broker fuera del propio
+contenedor es AMQPS (5671). No se usa `listeners.tcp = none` para
+deshabilitarlo del todo porque, en este entorno de laboratorio, prevalece
+tener una vía simple de depuración manual — la mitigación real es que
+ningún servicio tenga nunca una URI `amqp://` (sin "s") apuntando a este
+Broker documentada como válida.
+
+### Qué cambia para certificados reales de producción
+
+Las claves de `rabbitmq.conf` (`listeners.ssl.default`,
+`ssl_options.cacertfile`/`certfile`/`keyfile`) **no cambian de forma ni de
+nombre** — RabbitMQ configura igual un certificado autofirmado que uno
+emitido por una CA real. Lo único que cambia es **el origen de los
+archivos**:
+
+- `ssl_options.cacertfile` → el bundle de la CA pública/corporativa real
+  que emitió el certificado de servidor, en vez de
+  `rabbitmq/tls/ca_certificate.pem` generado por
+  `generate-lab-certs.sh`.
+- `ssl_options.certfile`/`ssl_options.keyfile` → el certificado y la clave
+  privada emitidos por esa CA real (p. ej. vía ACME/Let's Encrypt, una CA
+  corporativa, o el gestor de certificados/secretos del proveedor cloud),
+  en vez de los generados por el script de laboratorio.
+- La clave privada real **nunca** se commitea a este repo: en un
+  despliegue real, `ssl_options.keyfile` apuntaría a una ruta montada desde
+  un secret gestionado por la plataforma (Kubernetes Secret, Docker Swarm
+  secret, Key Vault/Secrets Manager del proveedor cloud, etc.) — mismo
+  principio que ya aplica este repo a las contraseñas de los usuarios de
+  RabbitMQ (ver "Credenciales de laboratorio" arriba).
+- Si en algún momento se decide exigir mTLS, se añadirían
+  `ssl_options.verify = verify_peer` y `ssl_options.fail_if_no_peer_cert =
+  true` juntas (una sin la otra no basta) — fuera del alcance de esta
+  feature.
+- Renovación/rotación de certificados reales es responsabilidad de quien
+  opere el despliegue (cert-manager, ACME, rotación del proveedor cloud) —
+  fuera del alcance de este repo de infraestructura de Broker.
+
 ## Próximas features que tocan este archivo
 
 - **Feature `cancellation_contract`** (id 5): exchange `scan.cancellations`

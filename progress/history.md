@@ -104,3 +104,70 @@
   repo; testcontainers se limpió solo tras los tests). Sin archivos
   temporales sueltos.
 - **Fecha:** 2026-09-14.
+
+---
+
+## 2026-09-17 — Feature 3 `tls` — DONE
+
+- **Feature completada:** id 3, `tls` — TLS (AMQPS) obligatorio para toda
+  conexión al Broker, requisito duro porque el `ScanRequest` transporta una
+  credencial SSH real en `ssh_credentials_ref` (`docs/security-scope.md`).
+- **Qué se habilitó:**
+  - Listener AMQPS en el puerto `5671` de RabbitMQ (`rabbitmq/rabbitmq.conf`:
+    `listeners.ssl.default = 5671` + `ssl_options.cacertfile/certfile/keyfile`
+    apuntando a `/etc/rabbitmq/tls/*.pem`), sin tocar la línea
+    `load_definitions` ya existente.
+  - `rabbitmq/generate-lab-certs.sh`: script `openssl` que genera una CA de
+    laboratorio propia (`O=security-app-lab`, `CN=security-app-lab-CA`) y un
+    certificado de servidor firmado por ella (`CN=rabbitmq`, SAN
+    `DNS:rabbitmq,DNS:localhost,IP:127.0.0.1`), salida en `rabbitmq/tls/`
+    (fuera de git, cubierto por `.gitignore` desde `scaffolding`). Documentado
+    explícita y repetidamente como material NO apto para producción.
+  - `docker-compose.yml`: puerto `"5671:5671"` expuesto + volumen
+    `./rabbitmq/tls:/etc/rabbitmq/tls:ro`. **Decisión del usuario**: el puerto
+    `5672` en claro se mantiene abierto, marcado explícitamente en el
+    comentario de cabecera del compose y en `rabbitmq/README.md` como
+    solo-desarrollo/depuración local — ningún servicio de producción debe
+    apuntar a él.
+  - `rabbitmq/README.md`: sección "TLS (AMQPS, feature `tls`)" con el paso de
+    setup del script, advertencia de laboratorio, y la sección "Qué cambia
+    para certificados reales de producción" (mismas claves de
+    `rabbitmq.conf`, solo cambia el origen de los archivos; la clave privada
+    real nunca se commitea, vía secret management de la plataforma).
+  - 2 tests nuevos en `tests/tls.rs` (`#[ignore = "requiere Docker"]`, contra
+    `rabbitmq:4.3.5-management` real vía `testcontainers`+`lapin`, nunca
+    mocks): `amqps_connection_with_lab_ca_operates_on_real_topology`
+    (conecta por AMQPS con la CA de laboratorio y opera de punta a punta
+    sobre la topología real de la feature 2 — publica como `lab-admin`, lee
+    como `ms-nmap` su propia cola) y
+    `plaintext_connection_to_tls_port_is_rejected` (conexión TCP cruda en
+    claro contra 5671 nunca completa un handshake AMQP).
+  - `tests/common/mod.rs` ajustado para montar los `.pem` de TLS también en
+    `start_broker()` (obligatorio: `rabbitmq.conf` declara `ssl_options.*`
+    incondicionalmente y el nodo no arranca sin ellos), sin cambiar el
+    comportamiento externo de los 10 tests previos.
+  - `Cargo.toml`: `tokio` gana features `net`/`io-util`; `[dev-dependencies]
+    rustls = "0.23"` para instalar explícitamente el `CryptoProvider`
+    `aws_lc_rs` antes de la primera conexión AMQPS (desviación documentada en
+    `progress/impl_tls.md`: el crate trae dos proveedores rustls
+    transitivos — `ring` y `aws_lc_rs` — y sin esta fijación la conexión
+    AMQPS colgaba indefinidamente en vez de fallar).
+- **Veredicto del reviewer:** APPROVED, sin cambios requeridos
+  (`progress/review_tls.md`). Verificó por su cuenta `./init.sh` completo
+  (fmt/clippy -D warnings/test/test --ignored/doc, **12/12** tests de
+  integración verdes contra Docker real: los 10 previos sin cambio de
+  comportamiento + los 2 nuevos de `tls.rs`), confirmó cadena CA→servidor
+  real (no autofirmado suelto), ausencia de credenciales/`.pem` reales
+  commiteados, y que ninguna otra feature (`contracts/`, permisos de
+  `definitions.json`) fue adelantada. Única observación no bloqueante:
+  `server_key.pem` usa `chmod 644` en vez de `640` — justificado (el usuario
+  `rabbitmq` del contenedor oficial no coincide con el UID del host que
+  generó el archivo vía bind-mount) y aceptable por tratarse de material de
+  laboratorio desechable, nunca real.
+- **Cierre de sesión:** `./init.sh` re-ejecutado en verde de punta a punta
+  (12/12 tests de integración contra Docker real). `feature_list.json` id 3
+  → `status: "done"`. Sin contenedores/volúmenes Docker huérfanos de esta
+  sesión (`docker ps -a` no muestra ningún contenedor RabbitMQ de este repo;
+  los contenedores presentes pertenecen a otros proyectos ajenos, ya
+  existentes antes de esta sesión). Sin archivos temporales sueltos.
+- **Fecha:** 2026-09-17.

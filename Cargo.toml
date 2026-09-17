@@ -12,4 +12,15 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15.0", features = ["rabbitmq"] }
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
+
+[dev-dependencies]
+# Solo para instalar explícitamente el CryptoProvider de rustls antes de
+# abrir una conexión AMQPS en los tests (ver tests/common/mod.rs,
+# `ensure_rustls_crypto_provider`) — este crate ya trae `rustls` de forma
+# transitiva (vía `lapin`, `reqwest`/`rustls-platform-verifier` y
+# `testcontainers`/`bollard`/`hyper-rustls`), pero dos proveedores
+# criptográficos distintos (`ring` y `aws-lc-rs`) quedan compilados a la
+# vez, y rustls no puede auto-seleccionar uno — hay que instalarlo a mano
+# una sola vez por proceso.
+rustls = "0.23"

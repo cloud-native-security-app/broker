@@ -5,9 +5,15 @@
 #
 # NO es un despliegue de producción. Ver docs/architecture.md.
 #
-# Puerto 5672 (AMQP en claro): expuesto aquí solo para desarrollo/depuración
-# local. TLS (AMQPS, puerto 5671) se habilita en la feature `tls` — hasta
-# entonces esta es la única forma de conectar en el compose local.
+# Puerto 5672 (AMQP en claro): expuesto SOLO para desarrollo/depuración
+# local (p. ej. herramientas que no manejan TLS). Desde la feature `tls`,
+# AMQPS (puerto 5671, con el certificado/clave de laboratorio de
+# rabbitmq/tls/, generados por rabbitmq/generate-lab-certs.sh) es la vía
+# real de conexión — ningún servicio de producción debe apuntar a 5672 (ver
+# docs/security-scope.md: la credencial SSH de ScanRequest no puede viajar
+# en claro). No se deshabilita 5672 del todo (`listeners.tcp = none`) para
+# mantener una vía simple de depuración manual local — decisión documentada
+# en rabbitmq/README.md.
 #
 # Desde la feature `topology_definition`, la topología completa (vhost
 # security-app, exchanges, colas, bindings y usuarios — incluido el usuario
@@ -27,8 +33,10 @@ services:
   rabbitmq:
     image: rabbitmq:4.3.5-management
     ports:
-      - "5672:5672" # AMQP — solo desarrollo/depuración local, ver nota arriba
+      - "5672:5672" # AMQP en claro — solo desarrollo/depuración local, ver nota arriba
+      - "5671:5671" # AMQPS (TLS) — puerto real de conexión para servicios
       - "15672:15672" # UI de management, solo desarrollo local
     volumes:
       - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/tls:/etc/rabbitmq/tls:ro
