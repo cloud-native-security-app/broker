@@ -113,7 +113,7 @@
         "No se añade código Rust nuevo ni tests nuevos en esta feature; si al escribir la documentación se detecta que falta algo verificable, se registra como feature nueva en vez de añadirse aquí sin acordarlo",
         "./init.sh en verde (sin cambios respecto a la feature 6)"
       ],
-      "status": "pending"
+      "status": "done"
     }
   ]
 }

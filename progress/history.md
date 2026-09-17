@@ -366,3 +366,69 @@
   contenedor de este repo; testcontainers se limpió solo tras los tests).
   Sin archivos temporales sueltos.
 - **Fecha:** 2026-09-17.
+
+---
+
+## 2026-09-17 — Feature 7 `deployment_docs` — DONE (última del roadmap)
+
+- **Feature completada:** id 7, `deployment_docs` — documentación de
+  despliegue real (sin código ni tests nuevos), última de las 7 features
+  del roadmap original.
+- **Qué se documentó:**
+  - `README.md` §"Despliegue": cómo cargar `rabbitmq/definitions.json` en
+    una instancia real, las 3 vías exigidas por el acceptance (API de
+    management `POST /api/definitions`, `rabbitmqctl import_definitions
+    <archivo>`, y el mecanismo del proveedor cloud/plataforma, marcado
+    explícitamente como "a definir según el proveedor que se decida", sin
+    nombrar AWS/GCP/Azure como decisión tomada); qué cambia respecto al
+    `docker-compose.yml` local (certificados TLS reales en vez de
+    autofirmados, contraseñas de servicio gestionadas fuera del repo,
+    UI de management no expuesta públicamente, monitoreo conectado a un
+    sistema de alertas real); y cómo cada servicio apunta a la instancia
+    real — para `ms-nmap`, las 2 variables reales confirmadas contra
+    `nmap-service/README.md` (`MS_NMAP_BROKER_ENDPOINT`,
+    `MS_NMAP_BROKER_CREDENTIAL`); para `gateway`/`ms-analisis`, descripción
+    genérica (host, vhost `security-app`, usuario ya definido en
+    `rabbitmq/definitions.json`, credencial siempre fuera del repo), sin
+    inventar nombres de variables de entorno que no existen en ningún repo
+    visible.
+  - `docs/architecture.md` §"Despliegue (feature `deployment_docs`)": el
+    "por qué" detrás de esos mismos puntos (por qué no se asume un
+    proveedor cloud, por qué el compose local no es el despliegue real —
+    ligado a la fuga de la credencial SSH real y a que RNF-09/RNF-10
+    exigen alertas reales, no solo endpoints que respondan bien — y por qué
+    cada servicio se documenta con distinto nivel de certeza).
+  - Sin cambios en `src/`, `tests/`, `rabbitmq/definitions.json`,
+    `contracts/` ni `docker-compose.yml` — puramente documental, tal como
+    exige el acceptance de la feature.
+- **Veredicto del reviewer:** APPROVED, sin cambios bloqueantes
+  (`progress/review_deployment_docs.md`). Verificó los 8 puntos del
+  acceptance uno a uno (carga en instancia real sin proveedor asumido; los
+  4 cambios respecto al compose local; las 2 variables reales de `ms-nmap`
+  confirmadas directamente en `nmap-service/README.md`; ausencia de
+  credenciales reales vía `grep`; sin código/tests nuevos vía `git diff
+  --stat`; `./init.sh` en verde con el mismo conteo de tests que
+  `observability`; la "feature futura potencial" documentada pero no
+  implementada; exactitud de las referencias cruzadas contra
+  `rabbitmq/README.md`). Hallazgo menor no bloqueante: el informe
+  `progress/impl_deployment_docs.md` decía "18 tests de integración" en vez
+  de los 20 reales (el entregable era correcto, solo el número en el
+  informe estaba mal) — corregido tras el veredicto.
+- **Corrección post-revisión:** se corrigió el conteo "18" → "20" en
+  `progress/impl_deployment_docs.md` (imprecisión de texto en el informe,
+  no en el entregable real).
+- **Cierre de sesión:** `./init.sh` re-ejecutado en verde de punta a punta
+  (15 tests unitarios + 20/20 tests de integración contra Docker real, sin
+  cambios respecto a `observability`). `feature_list.json` id 7 →
+  `status: "done"` — con esto, **las 7 features del roadmap original
+  quedan en `done`**. Sin contenedores/volúmenes Docker huérfanos de esta
+  sesión (`docker ps -a` no muestra ningún contenedor de este repo;
+  testcontainers se limpió solo tras los tests). Sin archivos temporales
+  sueltos.
+- **Fecha:** 2026-09-17.
+- **Nota:** esta era la última feature del roadmap original de 7
+  features. Cualquier trabajo futuro (p. ej. las ideas registradas en
+  `docs/architecture.md` §"Trabajo futuro potencial": test end-to-end de
+  `rabbitmqctl import_definitions`, o reemplazar el placeholder de
+  proveedor cloud) requeriría acordar explícitamente una feature nueva en
+  `feature_list.json` antes de implementarse.
