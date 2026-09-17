@@ -305,3 +305,64 @@
   testcontainers se limpió solo tras los tests). Sin archivos temporales
   sueltos.
 - **Fecha:** 2026-09-17.
+
+---
+
+## 2026-09-17 — Feature 6 `observability` — DONE
+
+- **Feature completada:** id 6, `observability` (RNF-09, RNF-10) — health
+  checks del nodo y métricas de las colas del Broker, verificables vía la
+  API HTTP de management ya expuesta desde la feature `scaffolding`, sin
+  tocar topología, permisos ni `docker-compose.yml`.
+- **Qué se documentó:** `rabbitmq/README.md` §"Observabilidad (health
+  checks y métricas de colas, feature `observability`)" — tabla de los 2
+  endpoints usados (`GET /api/healthchecks/node` y
+  `GET /api/queues/<vhost>/<queue>`) con ejemplo de respuesta real, y la
+  lista explícita de las **8 colas reales** a consultar (4 principales:
+  `ms-nmap.scan-requests`, `ms-analisis.scan-outcomes`,
+  `gateway.scan-outcomes`, `ms-nmap.scan-cancellations`; + sus 4 `.dlq`),
+  confirmadas leyendo `rabbitmq/definitions.json` directamente en vez de
+  asumidas. Nota de autenticación (siempre `lab-admin`, nunca un usuario de
+  servicio — que ni tiene el tag `administrator`) y de qué NO expone esta
+  feature (conteos/metadatos, nunca cuerpo de mensaje). Cross-reference
+  añadido en `docs/architecture.md`.
+- **Decisión sobre `rabbitmq_prometheus`:** documentada por escrito, no
+  implícita. Verificación empírica contra un contenedor real
+  (`rabbitmq-plugins list -e`) mostró que el plugin viene **habilitado por
+  defecto** en la imagen oficial `rabbitmq:4.3.5-management` (junto con
+  `rabbitmq_management`), sirviendo en el puerto interno 15692. La decisión
+  tomada es **no publicar `15692:15692`** en `docker-compose.yml` (que
+  queda sin cambios): no hay Prometheus/Grafana desplegado en este
+  laboratorio y la API de management ya cubre RNF-09/RNF-10 por completo;
+  publicar el puerto ampliaría la superficie expuesta sin beneficio actual.
+  Queda anotado como feature futura a discutir explícitamente si se decide
+  desplegar observabilidad basada en Prometheus.
+- **Tests nuevos:** `tests/observability.rs`, 3 tests de integración
+  `#[ignore = "requiere Docker"]` contra `rabbitmq:4.3.5-management` real
+  (`testcontainers`+`lapin`+`reqwest`, nunca mocks): `node_healthcheck_reports_ok`
+  (healthcheck del nodo responde `200 OK`/`{"status":"ok"}`),
+  `publishing_n_messages_reports_matching_queue_depth` (publica N=3
+  mensajes sin consumir en `ms-nmap.scan-requests` y verifica
+  `messages_ready == 3` vía la API), y
+  `exhausted_message_visible_in_dlq_via_management_api` (reutiliza el
+  mecanismo de `tests/retry_delivery_limit.rs` para agotar
+  `x-delivery-limit` y verifica que el mensaje muerto aparece en
+  `ms-nmap.scan-requests.dlq` vía la API). Se añadió un helper de sondeo
+  (`wait_for_messages_ready`) porque las estadísticas de management no son
+  instantáneas (verificado empíricamente, hasta ~2s de retraso).
+- **Veredicto del reviewer:** APPROVED, sin cambios requeridos
+  (`progress/review_observability.md`). Verificó por su cuenta `./init.sh`
+  completo (fmt/clippy -D warnings/test/test --ignored/doc, 15 tests
+  unitarios + **20/20** tests de integración contra Docker real, incluidos
+  los 3 nuevos), `docker compose config` (sin el puerto 15692 publicado), y
+  confirmó vía `git diff --stat` que no se tocó nada fuera de alcance
+  (`rabbitmq/definitions.json`, permisos, TLS y `docker-compose.yml`
+  intactos). Contrastó los 5 criterios de aceptación de la feature 6 uno a
+  uno — todos cumplidos.
+- **Cierre de sesión:** `./init.sh` re-ejecutado en verde de punta a punta
+  (15 tests unitarios + 20/20 tests de integración contra Docker real).
+  `feature_list.json` id 6 → `status: "done"`. Sin contenedores/volúmenes
+  Docker huérfanos de esta sesión (`docker ps -a` no muestra ningún
+  contenedor de este repo; testcontainers se limpió solo tras los tests).
+  Sin archivos temporales sueltos.
+- **Fecha:** 2026-09-17.

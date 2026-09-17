@@ -98,7 +98,10 @@ define el canal y el contrato.
 - **Observabilidad del Broker es un requisito explícito (RNF-09, RNF-10),
   no un nice-to-have.** Health checks del nodo y métricas de cola
   (mensajes pendientes, consumidores activos, mensajes en DLQ) deben ser
-  consultables vía la API de management — ver la feature `observability`.
+  consultables vía la API de management — ver la feature `observability`
+  y su documentación detallada (endpoints exactos, las 8 colas cubiertas,
+  y la decisión sobre el plugin `rabbitmq_prometheus`) en
+  `rabbitmq/README.md` §"Observabilidad".
 
 ## Capas / directorios
 

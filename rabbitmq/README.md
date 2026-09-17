@@ -275,6 +275,105 @@ archivos**:
   opere el despliegue (cert-manager, ACME, rotación del proveedor cloud) —
   fuera del alcance de este repo de infraestructura de Broker.
 
+## Observabilidad (health checks y métricas de colas, feature `observability`)
+
+RNF-09 (estado del Broker consultable) y RNF-10 (métricas de cola
+consultables) se cubren enteramente con la API HTTP de management ya
+expuesta desde la feature `scaffolding` (puerto 15672, mismo usuario
+`lab-admin` que el resto de consultas de solo-lectura de este repo — ver
+"Usuarios y permisos de mínimo privilegio" y "Credenciales de
+laboratorio" arriba: nunca un usuario de servicio, que ni siquiera tiene
+el tag `administrator` para autenticarse contra la API). No se despliega
+Prometheus/Grafana en este repo de laboratorio — ver "Decisión sobre
+`rabbitmq_prometheus`" abajo.
+
+### Endpoints usados
+
+| Endpoint | Para qué | Ejemplo de respuesta (verificado contra el contenedor real, `rabbitmq:4.3.5-management`) |
+|---|---|---|
+| `GET /api/healthchecks/node` | Estado del nodo (RNF-09) | `{"status":"ok"}` |
+| `GET /api/queues/<vhost>/<queue>` | Mensajes listos (`messages_ready`) y consumidores activos (`consumers`) por cola (RNF-10) | `{"messages_ready": 3, "consumers": 0, ...}` |
+
+`<vhost>` es siempre `security-app` (ver "Topología" arriba). Se consulta
+`/api/queues/security-app/<queue>` para cada una de las 8 colas
+declaradas en `rabbitmq/definitions.json` (features `topology_definition`
+y `cancellation_contract`):
+
+- `ms-nmap.scan-requests` / `ms-nmap.scan-requests.dlq`
+- `ms-analisis.scan-outcomes` / `ms-analisis.scan-outcomes.dlq`
+- `gateway.scan-outcomes` / `gateway.scan-outcomes.dlq`
+- `ms-nmap.scan-cancellations` / `ms-nmap.scan-cancellations.dlq`
+
+Para las 4 colas `.dlq`, el campo relevante es el mismo `messages_ready`:
+un valor mayor que 0 significa que hay mensajes muertos pendientes de
+investigar/reprocesar manualmente — ver "Qué NO expone esta feature"
+abajo sobre por qué no se inspecciona su cuerpo desde aquí.
+
+### Autenticación
+
+Igual que `tests/topology_exists.rs`: HTTP Basic con el usuario
+`lab-admin` (ver "Credenciales de laboratorio" arriba). Ningún usuario de
+servicio (`gateway`, `ms-nmap`, `ms-analisis`) tiene el tag
+`administrator`, así que ni siquiera puede autenticarse contra la API de
+management (`docs/security-scope.md` §"Usuarios y permisos de mínimo
+privilegio") — el monitoreo de este repo se hace siempre como
+administrador, nunca como un usuario de servicio productor/consumidor.
+
+### Qué NO expone esta feature
+
+Los dos endpoints de arriba devuelven **conteos y metadatos** (estado del
+nodo, profundidad de cola, número de consumidores) — nunca el cuerpo de
+un mensaje. No hay riesgo adicional de fuga del `ssh_credentials_ref` de
+`ScanRequest` por esta vía (ver `docs/security-scope.md` §"Cobertura de
+las features añadidas en la ronda 2"). La UI/API de management sigue sin
+exponerse fuera de `docker-compose.yml` local (mismo puerto 15672 ya
+documentado ahí, solo para desarrollo).
+
+### Decisión sobre el plugin `rabbitmq_prometheus`
+
+**No se publica ningún puerto adicional para él en `docker-compose.yml`.**
+Verificado contra el contenedor real (`rabbitmq:4.3.5-management`, vía
+`rabbitmq-plugins list -e`): el plugin `rabbitmq_prometheus` viene
+**habilitado por defecto** en la imagen oficial desde RabbitMQ 3.8+
+(junto con `rabbitmq_management`), sirviendo métricas en el puerto
+interno 15692 del contenedor — no es algo que este repo tenga que
+habilitar explícitamente en `rabbitmq.conf`/`definitions.json`. La
+decisión que sí toma este repo es **no publicar `15692:15692` en
+`docker-compose.yml`** (a diferencia de 5672/5671/15672, que sí se
+publican): no hay ningún Prometheus/Grafana desplegado en este repo de
+laboratorio que vaya a scrapearlo, y esta feature ya cubre RNF-09/RNF-10
+por completo con la API HTTP de management (`/api/healthchecks/node`,
+`/api/queues/...`), que además es la misma vía que ya usan los tests de
+`topology_definition` (`tests/topology_exists.rs`). Publicar un puerto
+adicional sin ningún consumidor real solo ampliaría la superficie
+expuesta del contenedor de desarrollo sin ningún beneficio de
+observabilidad adicional ahora mismo. Si en el futuro se decide desplegar
+Prometheus/Grafana como parte de la plataforma, es una feature nueva a
+discutir explícitamente (qué se publica, con qué autenticación/red, y su
+propio análisis de `docs/security-scope.md` si expone algo nuevo) — no se
+asume aquí.
+
+### Tests (`tests/observability.rs`)
+
+- `node_healthcheck_reports_ok`: el healthcheck del nodo responde
+  `200 OK` con `{"status":"ok"}` contra el contenedor con la topología
+  cargada.
+- `publishing_n_messages_reports_matching_queue_depth`: publica 3
+  mensajes en `scan.requests`/`scan.request` sin consumirlos y verifica
+  que `/api/queues/security-app/ms-nmap.scan-requests` reporta
+  `messages_ready: 3` y `consumers: 0` (con reintentos cortos: las
+  estadísticas de la API de management no son instantáneas — se tardó
+  hasta un par de segundos en reflejar publicaciones recientes al
+  verificarlo empíricamente contra el contenedor real, así que el test
+  sondea en vez de asumir una única lectura inmediata).
+- `exhausted_message_visible_in_dlq_via_management_api`: reutiliza el
+  mecanismo de `tests/retry_delivery_limit.rs` (publicar + `basic.reject`
+  ×3 hasta agotar `x-delivery-limit`) y verifica, vía
+  `/api/queues/security-app/ms-nmap.scan-requests.dlq`, que
+  `messages_ready` refleja el mensaje muerto — sin leerlo por AMQP en
+  este test, porque lo que se está probando es que la propia API de
+  management lo refleja.
+
 ## Próximas features que tocan este archivo
 
 - **Feature `cancellation_contract`** (id 5): exchange `scan.cancellations`

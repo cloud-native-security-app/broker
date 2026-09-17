@@ -99,7 +99,7 @@
         "Test de integración: tras forzar que un mensaje agote sus reintentos (reutilizando el mecanismo de la feature 2) y caiga en una .dlq, la API de management refleja ese mensaje en la cola de dead-letter correspondiente",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 7,
