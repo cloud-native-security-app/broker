@@ -68,7 +68,7 @@
         "Test de integración (testcontainers, #[ignore = \"requiere Docker\"], smoke end-to-end del contrato): publica un ScanRequest de ejemplo válido en scan.requests y verifica que llega íntegro a ms-nmap.scan-requests; publica los tres ScanOutcome de ejemplo (started, completed, failed) en scan.outcomes y verifica el enrutamiento correcto a gateway.scan-outcomes (los tres) y ms-analisis.scan-outcomes (solo completed y failed)",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 5,

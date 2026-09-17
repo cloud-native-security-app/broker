@@ -171,3 +171,73 @@
   los contenedores presentes pertenecen a otros proyectos ajenos, ya
   existentes antes de esta sesión). Sin archivos temporales sueltos.
 - **Fecha:** 2026-09-17.
+
+---
+
+## 2026-09-17 — Feature 4 `message_contract` — DONE
+
+- **Feature completada:** id 4, `message_contract` — contrato de mensajes
+  (JSON Schema de `ScanRequest` y `ScanOutcome`, con las variantes
+  `started`/`completed`/`failed`), congelado y documentado a partir del
+  shape real ya implementado y testeado en `ms-nmap` (no re-derivado desde
+  cero).
+- **Qué se creó:**
+  - `contracts/scan-request.schema.json` — JSON Schema draft 2020-12 de
+    `ScanRequest`: 6 campos (`correlation_id`, `ip`, `network_user`,
+    `ssh_credentials_ref`, `has_sudo`, `requested_by`), todos `required`,
+    `additionalProperties: false`. `ip` validado con `pattern` (regex
+    IPv4/IPv6) en vez de `format`, decisión justificada (el crate
+    `jsonschema` no valida `format` por defecto en 2020-12).
+  - `contracts/scan-outcome.schema.json` — JSON Schema con `oneOf` de 3
+    variantes discriminadas por `status`: `started` (solo
+    `correlation_id`, sin `result` ni `reason` — documentado como
+    "contrato acordado, publicación PENDIENTE en `ms-nmap`", ya que el
+    código real de `ms-nmap` solo tiene `Completed`/`Failed`),
+    `completed` (con `result: $defs/scanResult`) y `failed` (con
+    `reason`), cada una `additionalProperties: false`. `$defs/scanResult`
+    incluye el shape completo de `PortFinding`/`VulnFinding` y los 4 enums
+    (`Protocol`, `PortState`, `Severity`, `VulnSource`) con los valores
+    string exactos de `ms-nmap`.
+  - `contracts/README.md` — documenta qué exchange/routing-key transporta
+    cada mensaje y quién publica/consume, contrastado contra
+    `rabbitmq/definitions.json` real (incluida la diferencia de bindings
+    entre `ms-analisis.scan-outcomes` y `gateway.scan-outcomes`); marca
+    `started` explícitamente como pendiente en `ms-nmap`; nota explícita
+    de ausencia de `schema_version` y política de cambios aditivos.
+  - `src/contracts.rs` — helpers de validación (`validate_scan_request`,
+    `validate_scan_outcome`) vía crate `jsonschema` (schemas embebidos con
+    `include_str!`, compilados una vez por proceso), `ContractError` con
+    `thiserror`; 11 tests unitarios sin Docker (payloads válidos y varios
+    casos de rechazo: campo faltante, campo extra, `ip` inválida,
+    `completed`/`failed` con campos cruzados, `status` desconocido).
+  - `tests/message_contract.rs` — test de integración smoke end-to-end
+    (`#[ignore = "requiere Docker"]`, contra `rabbitmq:4.3.5-management`
+    real vía `testcontainers`+`lapin`): publica un `ScanRequest` válido y
+    verifica que llega íntegro a `ms-nmap.scan-requests`; publica las 3
+    variantes de `ScanOutcome` y verifica el enrutamiento exacto (las 3 a
+    `gateway.scan-outcomes`, solo `completed`/`failed` a
+    `ms-analisis.scan-outcomes`).
+  - `Cargo.toml`/`Cargo.lock` — nuevas dependencias `jsonschema` (sin
+    features de resolución remota) y `thiserror`.
+- **Veredicto del reviewer:** APPROVED, sin cambios requeridos
+  (`progress/review_message_contract.md`). El reviewer contrastó campo por
+  campo `contracts/scan-request.schema.json` y
+  `contracts/scan-outcome.schema.json` directamente contra el código
+  fuente real de `ms-nmap` (`domain.rs`, `publisher.rs`), verificó
+  `./init.sh` completo (11 unitarios + 14 de integración contra Docker
+  real), y confirmó ausencia de credenciales reales y que ningún archivo
+  fuera del alcance de la feature (`rabbitmq/definitions.json`, TLS) fue
+  tocado. Dos observaciones menores no bloqueantes, sin acción requerida:
+  redacción ambigua en la tabla de `contracts/README.md` línea 16 (el
+  contenido técnico correcto ya está aclarado en el cuerpo del documento)
+  y el uso justificado de `panic!()` en `src/contracts.rs::compile`
+  (documentado como aceptable mientras solo compile los 2 schemas propios
+  del repo).
+- **Cierre de sesión:** `./init.sh` re-ejecutado en verde de punta a punta
+  (11 tests unitarios + 14 tests de integración contra Docker real, todos
+  pasando). `feature_list.json` id 4 → `status: "done"`. Sin
+  contenedores/volúmenes Docker huérfanos de esta sesión (`docker ps -a`
+  no muestra ningún contenedor de este repo — testcontainers se limpió
+  solo tras los tests; `docker compose ps -a` no muestra servicios
+  levantados). Sin archivos temporales sueltos.
+- **Fecha:** 2026-09-17.

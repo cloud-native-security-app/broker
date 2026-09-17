@@ -14,6 +14,8 @@
 //! `definitions.json`; ese lugar es este módulo, también documentado en
 //! `rabbitmq/README.md` para quien no lea Rust.
 
+pub mod contracts;
+
 /// Vhost dedicado del Broker (ver `rabbitmq/definitions.json`).
 pub const VHOST: &str = "security-app";
 
