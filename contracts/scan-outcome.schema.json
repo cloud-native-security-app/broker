@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://security-app.example.test/broker/contracts/scan-outcome.schema.json",
+  "title": "ScanOutcome",
+  "description": "Mensaje publicado por ms-nmap en el exchange scan.outcomes, internamente tageado por 'status' (routing keys scan.outcome.started/completed/failed). Consumido por ms-analisis (solo completed/failed, cola ms-analisis.scan-outcomes) y por el Gateway (las tres variantes, cola gateway.scan-outcomes). Shape de 'completed'/'failed' copiado literalmente de nmap-service/src/messaging/publisher.rs (ver progress/explore_ms_nmap_contract.md §2). La variante 'started' es contrato ACORDADO pero PENDIENTE de implementar en ms-nmap (no existe todavía en el código real) — ver contracts/README.md.",
+  "$defs": {
+    "started": {
+      "type": "object",
+      "title": "ScanOutcome.started",
+      "description": "Contrato acordado para RF-07/RF-08 (Gateway refleja EN_PROGRESO). PENDIENTE de implementar/publicar en ms-nmap — no confirmado contra código real, a diferencia de completed/failed.",
+      "properties": {
+        "status": { "const": "started" },
+        "correlation_id": { "type": "string", "minLength": 1 }
+      },
+      "required": ["status", "correlation_id"],
+      "additionalProperties": false
+    },
+    "completed": {
+      "type": "object",
+      "title": "ScanOutcome.completed",
+      "properties": {
+        "status": { "const": "completed" },
+        "correlation_id": { "type": "string", "minLength": 1 },
+        "result": { "$ref": "#/$defs/scanResult" }
+      },
+      "required": ["status", "correlation_id", "result"],
+      "additionalProperties": false
+    },
+    "failed": {
+      "type": "object",
+      "title": "ScanOutcome.failed",
+      "properties": {
+        "status": { "const": "failed" },
+        "correlation_id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "required": ["status", "correlation_id", "reason"],
+      "additionalProperties": false
+    },
+    "scanResult": {
+      "type": "object",
+      "title": "ScanResult",
+      "description": "domain.rs ScanResult (líneas 213-298 de nmap-service, ver progress/explore_ms_nmap_contract.md §2.1).",
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "IP escaneada (IpAddr, igual formato que ScanRequest.ip).",
+          "anyOf": [
+            {
+              "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+            },
+            {
+              "pattern": "^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$"
+            }
+          ]
+        },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/portFinding" }
+        },
+        "vulnerabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/vulnFinding" }
+        },
+        "scanned_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC 3339 con offset (serde time::serde::rfc3339)."
+        }
+      },
+      "required": ["host", "ports", "vulnerabilities", "scanned_at"],
+      "additionalProperties": false
+    },
+    "portFinding": {
+      "type": "object",
+      "title": "PortFinding",
+      "properties": {
+        "port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "protocol": { "enum": ["tcp", "udp"] },
+        "state": {
+          "enum": [
+            "open",
+            "closed",
+            "filtered",
+            "unfiltered",
+            "open_filtered",
+            "closed_filtered"
+          ]
+        },
+        "service": { "type": ["string", "null"] },
+        "version": { "type": ["string", "null"] },
+        "cpes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["port", "protocol", "state", "service", "version", "cpes"],
+      "additionalProperties": false
+    },
+    "vulnFinding": {
+      "type": "object",
+      "title": "VulnFinding",
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "severity": {
+          "enum": ["unknown", "info", "low", "medium", "high", "critical"]
+        },
+        "description": { "type": "string" },
+        "nse_script": { "type": "string" },
+        "source": { "enum": ["nmap_nse", "exploit_db", "nvd"] },
+        "references": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": [
+        "id",
+        "severity",
+        "description",
+        "nse_script",
+        "source",
+        "references"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/started" },
+    { "$ref": "#/$defs/completed" },
+    { "$ref": "#/$defs/failed" }
+  ]
+}

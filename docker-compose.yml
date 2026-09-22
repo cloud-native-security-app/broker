@@ -1,0 +1,42 @@
+# Entorno de referencia LOCAL para desarrollo y para los tests de
+# integración (testcontainers usa esta misma imagen, pineada por tag, para
+# levantar sus propios contenedores efímeros — este compose es para
+# desarrollo manual, p. ej. inspeccionar la UI de management).
+#
+# NO es un despliegue de producción. Ver docs/architecture.md.
+#
+# Puerto 5672 (AMQP en claro): expuesto SOLO para desarrollo/depuración
+# local (p. ej. herramientas que no manejan TLS). Desde la feature `tls`,
+# AMQPS (puerto 5671, con el certificado/clave de laboratorio de
+# rabbitmq/tls/, generados por rabbitmq/generate-lab-certs.sh) es la vía
+# real de conexión — ningún servicio de producción debe apuntar a 5672 (ver
+# docs/security-scope.md: la credencial SSH de ScanRequest no puede viajar
+# en claro). No se deshabilita 5672 del todo (`listeners.tcp = none`) para
+# mantener una vía simple de depuración manual local — decisión documentada
+# en rabbitmq/README.md.
+#
+# Desde la feature `topology_definition`, la topología completa (vhost
+# security-app, exchanges, colas, bindings y usuarios — incluido el usuario
+# admin `lab-admin`) vive únicamente en rabbitmq/definitions.json, cargado
+# vía rabbitmq/rabbitmq.conf (`load_definitions`, ver ese archivo para por
+# qué no se usa `management.load_definitions` ni `RABBITMQ_LOAD_DEFINITIONS`
+# — esta última variable es específica de la imagen Bitnami, no de la
+# imagen oficial que usa este repo). Ya no se usan las variables de entorno
+# RABBITMQ_DEFAULT_USER/RABBITMQ_DEFAULT_PASS: mantenerlas junto a un
+# `definitions.json` que también declara usuarios crea una fuente de verdad
+# duplicada; el usuario `lab-admin` (mismas credenciales de laboratorio de
+# la feature `scaffolding`: usuario `lab-admin`, contraseña
+# `lab-only-not-a-real-secret`) se declara ahora en
+# rabbitmq/definitions.json, con permisos completos sobre el vhost
+# `security-app` — ver rabbitmq/README.md.
+services:
+  rabbitmq:
+    image: rabbitmq:4.3.5-management
+    ports:
+      - "5672:5672" # AMQP en claro — solo desarrollo/depuración local, ver nota arriba
+      - "5671:5671" # AMQPS (TLS) — puerto real de conexión para servicios
+      - "15672:15672" # UI de management, solo desarrollo local
+    volumes:
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/tls:/etc/rabbitmq/tls:ro

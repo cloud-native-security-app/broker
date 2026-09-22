@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://security-app.example.test/broker/contracts/scan-cancellation.schema.json",
+  "title": "ScanCancellation",
+  "description": "Mensaje publicado por el Gateway en el exchange scan.cancellations (routing key scan.cancellation) para pedir la cancelación de un escaneo en curso (RF-14). ms-nmap consume el canal, pero honrar la cancelación (abortar el pipeline en ejecución) es trabajo PENDIENTE en el repo nmap-service — ver contracts/README.md. Nunca lleva una credencial: solo el identificador del escaneo a cancelar y quién la solicita.",
+  "type": "object",
+  "properties": {
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "correlation_id del ScanRequest cuyo escaneo se quiere cancelar (mismo campo/tipo que contracts/scan-request.schema.json#/properties/correlation_id)."
+    },
+    "requested_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identidad de quien solicita la cancelación (mismo shape que ScanRequest.requested_by)."
+    }
+  },
+  "required": ["correlation_id", "requested_by"],
+  "additionalProperties": false
+}

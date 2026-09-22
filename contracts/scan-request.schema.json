@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://security-app.example.test/broker/contracts/scan-request.schema.json",
+  "title": "ScanRequest",
+  "description": "Mensaje publicado por el Gateway en el exchange scan.requests (routing key scan.request) y consumido por ms-nmap. Shape copiado literalmente de nmap-service/src/domain.rs (ver progress/explore_ms_nmap_contract.md §1) — ssh_credentials_ref viaja como string plano con la credencial SSH real, nunca una referencia opaca (ver docs/security-scope.md).",
+  "type": "object",
+  "properties": {
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identificador de correlación de la solicitud de escaneo (newtype CorrelationId en ms-nmap, serde(transparent) sobre String)."
+    },
+    "ip": {
+      "type": "string",
+      "description": "Dirección IP objetivo del escaneo, IPv4 o IPv6 (serde serializa IpAddr como string). Se valida con un patrón regex en vez de 'format: ipv4/ipv6' para no depender de que el validador de turno implemente esas format-assertions (algunos las tratan como meras anotaciones en 2020-12).",
+      "anyOf": [
+        {
+          "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+        },
+        {
+          "pattern": "^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$"
+        }
+      ]
+    },
+    "network_user": {
+      "type": "string",
+      "minLength": 1
+    },
+    "ssh_credentials_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Credencial SSH REAL usada por ms-nmap para autenticarse en el objetivo (no una referencia opaca a un vault) — ver docs/security-scope.md. Nunca loggear este valor."
+    },
+    "has_sudo": {
+      "type": "boolean"
+    },
+    "requested_by": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "correlation_id",
+    "ip",
+    "network_user",
+    "ssh_credentials_ref",
+    "has_sudo",
+    "requested_by"
+  ],
+  "additionalProperties": false
+}

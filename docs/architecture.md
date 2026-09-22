@@ -98,7 +98,10 @@ define el canal y el contrato.
 - **Observabilidad del Broker es un requisito explícito (RNF-09, RNF-10),
   no un nice-to-have.** Health checks del nodo y métricas de cola
   (mensajes pendientes, consumidores activos, mensajes en DLQ) deben ser
-  consultables vía la API de management — ver la feature `observability`.
+  consultables vía la API de management — ver la feature `observability`
+  y su documentación detallada (endpoints exactos, las 8 colas cubiertas,
+  y la decisión sobre el plugin `rabbitmq_prometheus`) en
+  `rabbitmq/README.md` §"Observabilidad".
 
 ## Capas / directorios
 
@@ -178,6 +181,75 @@ honrar la cancelación es trabajo pendiente en `ms-nmap`, RF-14):
 - Un fallo de un test de integración nunca se "arregla" reemplazándolo por
   un mock — se documenta el bloqueo (p. ej. Docker no disponible) en
   `progress/current.md`.
+
+## Despliegue (feature `deployment_docs`)
+
+> Detalle práctico (las 3 vías de carga, la tabla de variables, referencias
+> exactas) vive en `README.md` §"Despliegue" — esta sección explica el
+> *por qué* de cada decisión, análogo a la sección "Despliegue" de
+> `docs/architecture.md` en `ms-nmap`, no la duplica.
+
+Este repo no empaqueta ningún binario ni imagen de servicio (ver "Capas /
+directorios" arriba): el crate Rust es solo arnés de verificación, sin
+`src/main.rs`. Lo único "desplegable" que produce este repo es
+declarativo: `rabbitmq/definitions.json` — el mismo archivo que
+`docker-compose.yml` carga en local es el que se aplica, sin reescribirlo,
+a una instancia real.
+
+### Por qué no se asume un proveedor cloud
+
+La feature `deployment_docs` exige explícitamente no asumir un proveedor
+si no se ha decidido — mismo principio que "Decisiones de diseño ya
+tomadas" arriba: no se inventa infraestructura sin que el usuario la
+pida. Nombrar aquí un servicio gestionado concreto (AWS MQ, GCP, Azure
+Service Bus, etc.) congelaría una decisión de arquitectura que no le
+corresponde tomar a este repo por su cuenta. Si en el futuro se decide un
+proveedor, se documenta como actualización de `README.md` §"Despliegue",
+no como una feature nueva que intente adivinar la decisión.
+
+### Por qué el `docker-compose.yml` local no es el despliegue real
+
+`docker-compose.yml` es, desde `scaffolding`, el entorno de referencia
+para desarrollo y tests, nunca un despliegue de producción. Los 4 puntos
+que cambian para producción (certificados TLS reales, contraseñas de
+servicio fuera del repo, UI de management no pública, monitoreo
+conectado a un sistema de alertas real) ya están detallados con su propia
+justificación en `rabbitmq/README.md` (secciones "TLS (AMQPS)",
+"Credenciales de laboratorio" y "Observabilidad") y resumidos en
+`README.md` §"Despliegue" — no se repiten aquí byte a byte. Ninguno de
+los 4 es opcional: los tres primeros mitigan directamente la fuga de la
+credencial SSH real que transporta `ScanRequest` (ver
+`docs/security-scope.md`); el cuarto (monitoreo → alertas) es lo que
+convierte RNF-09/RNF-10 (ya cubiertos por la API de management, feature
+`observability`) en observabilidad *operativa* de verdad — sin un sistema
+de alertas consumiendo esos endpoints, que respondan bien no avisa a
+nadie si el nodo cae o una `.dlq` empieza a crecer.
+
+### Por qué cada servicio se documenta con distinto nivel de certeza
+
+`ms-nmap` ya tiene, en su propio repo, dos variables de entorno reales
+para el Broker (`MS_NMAP_BROKER_ENDPOINT`, `MS_NMAP_BROKER_CREDENTIAL`,
+confirmadas en `nmap-service/README.md`) — este repo solo documenta qué
+debería contener cada una una vez que RabbitMQ es la tecnología decidida
+(la URI AMQPS y la contraseña del usuario `ms-nmap`), sin inventar
+variables nuevas que `ms-nmap` no exponga ya. `gateway` y `ms-analisis` no
+tienen, desde aquí, ningún repo visible con variables reales confirmadas,
+así que se documentan en términos genéricos (host, vhost, usuario ya
+definido en `rabbitmq/definitions.json`, credencial fuera del repo) en vez
+de inventar nombres de variable de entorno concretos que no se puedan
+verificar contra código real.
+
+### Trabajo futuro potencial (detectado aquí, NO implementado)
+
+- Un test de integración que ejercite explícitamente
+  `rabbitmqctl import_definitions` como mecanismo de carga (los tests
+  actuales de `topology_definition` verifican la topología resultante,
+  pero vía montaje de archivo + arranque del nodo, no vía el comando
+  `import_definitions` en un nodo ya corriendo) — quedaría como una
+  feature nueva a decidir explícitamente con el usuario, no se agrega a
+  `feature_list.json` en esta sesión.
+- Reemplazar el placeholder genérico del proveedor cloud por el mecanismo
+  real una vez se decida una plataforma de despliegue concreta.
 
 ## Qué NO hacer
 

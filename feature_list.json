@@ -14,7 +14,7 @@
         "./init.sh llega en verde hasta donde puede: secciones 1-4 en OK, sección 5 (compilar/test/doc) en OK con un crate vacío (0 tests es válido aquí)",
         "docker compose config valida docker-compose.yml sin error"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 2,
@@ -35,7 +35,7 @@
         "Test de integración: un mensaje que agota el número máximo de reintentos configurado (no un TTL único) termina en la .dlq correspondiente; se verifica que efectivamente pasó por el ciclo de reintentos (no cayó directo a la primera)",
         "./init.sh en verde: cargo fmt/clippy/test/test --ignored/doc limpios"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 3,
@@ -51,7 +51,7 @@
         "docs/security-scope.md ya cubre esto (no requiere cambios) — esta feature es la implementación de esa política",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 4,
@@ -68,7 +68,7 @@
         "Test de integración (testcontainers, #[ignore = \"requiere Docker\"], smoke end-to-end del contrato): publica un ScanRequest de ejemplo válido en scan.requests y verifica que llega íntegro a ms-nmap.scan-requests; publica los tres ScanOutcome de ejemplo (started, completed, failed) en scan.outcomes y verifica el enrutamiento correcto a gateway.scan-outcomes (los tres) y ms-analisis.scan-outcomes (solo completed y failed)",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 5,
@@ -84,7 +84,7 @@
         "Test unitario: un payload de cancelación de ejemplo válida contra el schema; uno sin correlation_id es rechazado",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 6,
@@ -99,7 +99,7 @@
         "Test de integración: tras forzar que un mensaje agote sus reintentos (reutilizando el mecanismo de la feature 2) y caiga en una .dlq, la API de management refleja ese mensaje en la cola de dead-letter correspondiente",
         "./init.sh en verde"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": 7,
@@ -113,7 +113,7 @@
         "No se añade código Rust nuevo ni tests nuevos en esta feature; si al escribir la documentación se detecta que falta algo verificable, se registra como feature nueva en vez de añadirse aquí sin acordarlo",
         "./init.sh en verde (sin cambios respecto a la feature 6)"
       ],
-      "status": "pending"
+      "status": "done"
     }
   ]
 }
