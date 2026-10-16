@@ -3,7 +3,7 @@
 //! Dos tests: (1) una conexión AMQPS con la CA de laboratorio conecta y
 //! opera sobre la topología real (feature `topology_definition`), y (2)
 //! una conexión sin TLS al puerto AMQPS es rechazada — ver
-//! `docs/verification.md` (Nivel 3) y `progress/explore_lapin_tls.md`.
+//! `docs/verification.md` (Nivel 3) y `docs/decisions.md` (D-06).
 
 mod common;
 
@@ -21,7 +21,7 @@ const LAB_PAYLOAD: &[u8] = br#"{"note":"lab-only-not-a-real-secret tls payload"}
 /// cliente (incluido `lapin`) nada más abrir la conexión — ver
 /// `amq-protocol` v10.6.3 `protocol/src/generated.rs` +
 /// `protocol/src/frame/generation.rs` (citado en
-/// `progress/explore_lapin_tls.md` §5.1).
+/// `docs/decisions.md` (D-06)).
 const AMQP_0_9_1_PROTOCOL_HEADER: &[u8] = b"AMQP\x00\x00\x09\x01";
 
 /// Primer octeto de cualquier registro TLS (`ContentType`, RFC 8446 §5.1):

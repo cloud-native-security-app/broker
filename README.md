@@ -24,11 +24,37 @@ cliente RabbitMQ contra el contrato documentado aquí.
 
 `ms-usuarios`, `ms-nmap`, `ms-analisis` y el Gateway viven en otros repos.
 
-## Desarrollo
+## Verificación
 
-El repositorio se desarrolla guiado por agentes de IA sobre un arnés
-documental (`AGENTS.md`, `feature_list.json`, `docs/`, `CHECKPOINTS.md`).
-Antes de tocar nada, lee `CLAUDE.md`.
+Toda la verificación se ejecuta con `make verify` (requiere Rust estable y
+Docker). Targets individuales:
+
+| Target | Comando |
+|---|---|
+| `make compose-check` | `docker compose config` |
+| `make fmt` | `cargo fmt --check` |
+| `make lint` | `cargo clippy --all-targets -- -D warnings` |
+| `make test` | `cargo test` (unitarios, sin Docker) |
+| `make test-integration` | `cargo test -- --ignored` (testcontainers, requiere Docker) |
+| `make doc` | `cargo doc --no-deps` |
+
+Los tests de integración corren contra un `rabbitmq:4.3.5-management` real
+levantado por `testcontainers`; si Docker no está disponible se reporta como
+bloqueo, nunca se reemplazan por mocks. Ver `docs/verification.md`.
+
+## Documentación
+
+- `docs/architecture.md`: alcance, topología y estándar de calidad.
+- `docs/conventions.md`, `docs/security-scope.md`, `docs/verification.md`.
+- `docs/decisions.md`: decisiones de diseño y su contexto.
+
+## Desarrollo asistido por IA
+
+Este repo usa **gentle-ai**: cada funcionalidad sustancial se planifica en un
+feature doc de Organic Driven Development bajo `odd/tasks/` (por ejemplo
+`odd/tasks/amazon-mq-migration.md`), con una copia de recuperación en Engram.
+El trabajo se hace en ramas, con Conventional Commits y verificando con
+`make verify` antes de cerrar cada tarea.
 
 ## Despliegue
 

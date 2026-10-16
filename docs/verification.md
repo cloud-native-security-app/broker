@@ -44,7 +44,7 @@ documenta con `#[allow(...)]` y un comentario explicando por qué.
 - Se marcan `#[ignore = "requiere Docker"]` (ver `docs/conventions.md`), se
   ejecutan con `cargo test -- --ignored`, y requieren Docker disponible. Si
   falla por falta de Docker, se documenta como bloqueo en
-  `progress/current.md` — no se reemplaza por un mock.
+  el feature doc de `odd/tasks/` — no se reemplaza por un mock.
 - Cubren, como mínimo: la topología existe tal cual `definitions.json` la
   declara; cada usuario de servicio puede hacer **solo** lo suyo (positivo
   + negativo); el dead-lettering funciona; TLS es exigible (una conexión
@@ -70,15 +70,15 @@ llega íntegro a la cola de `ms-nmap`; publica un `ScanOutcome` de ejemplo
 - ❌ Probar contra una instancia de RabbitMQ de staging o producción, o con
   credenciales reales de ningún tipo.
 - ❌ Silenciar un warning de `clippy` con `#[allow(...)]` sin comentario.
-- ❌ Marcar la feature como `done` sin pasar `./init.sh`.
+- ❌ Marcar una tarea como completada sin pasar `make verify`.
 - ❌ Dar por buena una topología donde un usuario tiene más permisos de los
   que su servicio necesita "por si acaso".
 
 ## Verificación final antes de cerrar
 
 ```bash
-./init.sh           # debe terminar con [OK] Entorno listo
+make verify         # fmt, clippy, tests, tests con Docker, doc, compose config
 ```
 
-Si `./init.sh` está rojo, **no** marques nada como `done`. Anota el bloqueo
-en `progress/current.md` y pon `"status": "blocked"` en `feature_list.json`.
+Si `make verify` está rojo, **no** marques nada como completado. Anota el
+bloqueo en el feature doc de `odd/tasks/`.

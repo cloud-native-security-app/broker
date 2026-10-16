@@ -161,7 +161,7 @@ fn ensure_rustls_crypto_provider() {
 /// Conecta por AMQPS como `user`, confiando en la CA de laboratorio
 /// (`rabbitmq/tls/ca_certificate.pem`) además del verificador de
 /// plataforma por defecto de `lapin`/`rustls` (ver
-/// `progress/explore_lapin_tls.md` §2.3). Sin autenticación de cliente por
+/// `docs/decisions.md` (D-06)). Sin autenticación de cliente por
 /// certificado (`identity: None`) — este repo no exige mTLS, ver
 /// `docs/security-scope.md`.
 #[allow(dead_code)]

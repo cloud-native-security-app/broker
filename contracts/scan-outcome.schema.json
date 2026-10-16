@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://security-app.example.test/broker/contracts/scan-outcome.schema.json",
   "title": "ScanOutcome",
-  "description": "Mensaje publicado por ms-nmap en el exchange scan.outcomes, internamente tageado por 'status' (routing keys scan.outcome.started/completed/failed). Consumido por ms-analisis (solo completed/failed, cola ms-analisis.scan-outcomes) y por el Gateway (las tres variantes, cola gateway.scan-outcomes). Shape de 'completed'/'failed' copiado literalmente de nmap-service/src/messaging/publisher.rs (ver progress/explore_ms_nmap_contract.md §2). La variante 'started' es contrato ACORDADO pero PENDIENTE de implementar en ms-nmap (no existe todavía en el código real) — ver contracts/README.md.",
+  "description": "Mensaje publicado por ms-nmap en el exchange scan.outcomes, internamente tageado por 'status' (routing keys scan.outcome.started/completed/failed). Consumido por ms-analisis (solo completed/failed, cola ms-analisis.scan-outcomes) y por el Gateway (las tres variantes, cola gateway.scan-outcomes). Shape de 'completed'/'failed' copiado literalmente de nmap-service/src/messaging/publisher.rs (ver `docs/decisions.md` (D-08)). La variante 'started' es contrato ACORDADO pero PENDIENTE de implementar en ms-nmap (no existe todavía en el código real) — ver contracts/README.md.",
   "$defs": {
     "started": {
       "type": "object",
@@ -40,7 +40,7 @@
     "scanResult": {
       "type": "object",
       "title": "ScanResult",
-      "description": "domain.rs ScanResult (líneas 213-298 de nmap-service, ver progress/explore_ms_nmap_contract.md §2.1).",
+      "description": "domain.rs ScanResult (líneas 213-298 de nmap-service, ver `docs/decisions.md` (D-08)).",
       "properties": {
         "host": {
           "type": "string",

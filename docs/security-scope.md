@@ -45,8 +45,8 @@
 - Un usuario de RabbitMQ por servicio productor/consumidor (`gateway`,
   `ms-nmap`, `ms-analisis`), nunca un usuario compartido "genérico".
 - Los permisos (`configure`/`write`/`read`) de cada usuario se acotan por
-  regex **solo** a los exchanges/colas que su servicio necesita. Un
-  `reviewer` debe rechazar cualquier topología donde un usuario tenga
+  regex **solo** a los exchanges/colas que su servicio necesita. Toda
+  revisión debe rechazar cualquier topología donde un usuario tenga
   acceso a la cola de otro servicio.
 - El usuario administrador de RabbitMQ (con acceso a la UI de management y
   a `definitions.json` completo) es distinto de los usuarios de servicio y
@@ -110,7 +110,7 @@
 
 ## Si algo no está claro
 
-Si una feature de `feature_list.json` roza alguno de estos límites y no
+Si una feature planificada en `odd/tasks/` roza alguno de estos límites y no
 está claro cómo proceder, el agente **para y pregunta al usuario** en vez
 de asumir qué está autorizado — igual que cualquier otro bloqueo, se
-documenta en `progress/current.md`.
+documenta en el feature doc correspondiente de `odd/tasks/`.
