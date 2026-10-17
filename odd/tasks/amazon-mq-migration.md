@@ -1,3 +1,7 @@
+> **Superseded by `sqs-sns-migration.md` (2026-10-17).** Amazon MQ is denied in the Learner Lab and the user chose
+> SQS + SNS. This document is kept for history and spike results (MQ-01 stays as the evidence). MQ-02..MQ-09 are
+> obsolete and will not be executed. New plan: repo `broker`, path `odd/tasks/sqs-sns-migration.md` (tasks MSG-01..MSG-09).
+
 # Amazon MQ migration (broker repo)
 
 Self-contained: any AI agent can start from this file with no prior context.
