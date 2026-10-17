@@ -90,7 +90,7 @@ Queue policies: each SQS queue allows `sqs:SendMessage` only from `sns.amazonaws
 
 ### Open design questions (need a user decision; not decided here)
 
-1. Visibility timeout for `ms-nmap-scan-requests`: fixed ceiling or heartbeat extension? Needs the maximum scan duration.
+1. ~~Visibility timeout for `ms-nmap-scan-requests`: fixed ceiling or heartbeat extension?~~ **Decided 2026-10-17: fixed timeout**, computed in Terraform as `MS_NMAP_SSH_CONNECT_TIMEOUT_SECS + MS_NMAP_SSH_COMMAND_TIMEOUT_SECS + margin` (no `ChangeMessageVisibility` heartbeat).
 2. Maximum `ScanOutcome` size: is the 256 KB limit safe, or must results be stored elsewhere (S3) and referenced?
 3. Standard queues (proposed) or FIFO for requests/cancellations?
 4. Retention and encryption: SSE-SQS vs KMS, and retention for the requests queue and its DLQ (credentials inside).
