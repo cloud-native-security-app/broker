@@ -55,7 +55,7 @@ Out:
 ## Checklist
 
 Spikes (record yes/no and fallback in Progress):
-- [x] MQ-01 Spike: Amazon MQ is allowed in the Learner Lab (single-instance vs cluster, instance types). Result 2026-10-17: **NO**. The `voclabs` role gets `AccessDeniedException` ("no identity-based policy allows the action") on `mq:ListBrokers`, `mq:DescribeBrokerEngineTypes` and `mq:DescribeBrokerInstanceOptions` in us-east-1 and us-west-2. Fallback decision pending with the user.
+- [x] MQ-01 Spike: Amazon MQ is allowed in the Learner Lab (single-instance vs cluster, instance types). Result 2026-10-17: **NO**. The `voclabs` role gets `AccessDeniedException` ("no identity-based policy allows the action") on `mq:ListBrokers`, `mq:DescribeBrokerEngineTypes` and `mq:DescribeBrokerInstanceOptions` in us-east-1 and us-west-2. Fallback decision pending with the user. Alternative probe 2026-10-17: SQS + SNS **are allowed** in us-east-1. Create queue, DLQ via `RedrivePolicy` (`maxReceiveCount`), topic, queue policy, SNS->SQS subscription with `FilterPolicy` + raw delivery and publish all work (the filter dropped the non-matching event), and the test resources were deleted afterwards. Not yet checked: `LabRole` SQS/SNS access from ECS tasks.
 - [ ] MQ-02 Spike: quorum queues + `x-delivery-limit` work on the available engine version and deployment
       mode. Fallback: classic queues + DLX/TTL (see `docs/decisions.md`), or `CLUSTER_MULTI_AZ`.
 - [ ] MQ-03 Spike: `POST /api/definitions` imports `rabbitmq/definitions.json` (or a derived copy) successfully.
