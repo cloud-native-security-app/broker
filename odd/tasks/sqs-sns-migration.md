@@ -91,7 +91,7 @@ Queue policies: each SQS queue allows `sqs:SendMessage` only from `sns.amazonaws
 ### Open design questions (need a user decision; not decided here)
 
 1. ~~Visibility timeout for `ms-nmap-scan-requests`: fixed ceiling or heartbeat extension?~~ **Decided 2026-10-17: fixed timeout**, computed in Terraform as `MS_NMAP_SSH_CONNECT_TIMEOUT_SECS + MS_NMAP_SSH_COMMAND_TIMEOUT_SECS + margin` (no `ChangeMessageVisibility` heartbeat).
-2. Maximum `ScanOutcome` size: is the 256 KB limit safe, or must results be stored elsewhere (S3) and referenced?
+2. ~~Maximum `ScanOutcome` size: 256 KB safe or S3 reference?~~ **Decided 2026-10-17: inline with a size guard.** One IP per scan, but the ports/vulnerabilities arrays are unbounded in the schema. `nmap-service` checks the serialized outcome (threshold about 250 KB); above it, it publishes a `failed` outcome with an explicit "result too large" reason. No S3 claim-check.
 3. Standard queues (proposed) or FIFO for requests/cancellations?
 4. Retention and encryption: SSE-SQS vs KMS, and retention for the requests queue and its DLQ (credentials inside).
 5. Poison messages: wait for `maxReceiveCount` (3 visibility cycles) or send malformed messages to the DLQ immediately?
