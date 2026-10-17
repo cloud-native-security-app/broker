@@ -119,7 +119,7 @@ Out:
   privilege is lost (accepted tradeoff, 2026-10-17). Mitigation: resource-level policies on queues and topics, and one
   topic/queue per flow.
 - Temporary credentials; region `us-east-1`.
-- `LabRole` access to SQS/SNS from ECS is unverified until MSG-02.
+- `LabRole` access to SQS/SNS from ECS: verified in MSG-02 (2026-10-17).
 - Message bodies stay the existing JSON contracts; no contract changes in this feature.
 - Artifacts in English; existing Spanish docs keep being edited in Spanish.
 
@@ -135,7 +135,7 @@ Out:
 | ID | Task | Done |
 |---|---|---|
 | MSG-01 | Topology design sign-off: resolve open questions Q1-Q8, then freeze the table above as the `infra` TF-10 contract | [x] 2026-10-17 |
-| MSG-02 | Spike: `LabRole` can use SQS/SNS from inside a running ECS Fargate task (publish, receive, delete, change visibility, redrive; with and without SSE) and which SSE option works; record yes/no and fallback | [ ] |
+| MSG-02 | Spike: `LabRole` can use SQS/SNS from inside a running ECS Fargate task (publish, receive, delete, change visibility, redrive; with and without SSE) and which SSE option works; record yes/no and fallback. **Result 2026-10-17: YES.** A Fargate task (image `public.ecr.aws/aws-cli/aws-cli`, task and execution role `LabRole`, default VPC with public IP) ran as `assumed-role/LabRole` and passed: SNS publish with a `routing_key` attribute, SQS receive through the raw-delivery subscription, change-visibility, send to the DLQ, delete, get-attributes, all on SSE-SQS queues. Test resources deleted afterwards. Gotchas: the first `run-task` in a fresh account fails until the ECS service-linked role propagates (retry); a deleted queue name cannot be reused for 60 s. | [x] 2026-10-17 |
 | MSG-03 | LocalStack local setup: `docker-compose.yml` service, init script creating the full topology (`awslocal`), README local-dev section; RED: a test that fails until the topology exists | [ ] |
 | MSG-04 | Contract reuse: `contracts/*.schema.json` validate the SQS bodies; contract test publishes through SNS and validates the received body (adapt `message_contract.rs`) | [ ] |
 | MSG-05 | Message attributes and filtering: define the `routing_key` attribute contract; tests that the Gateway receives all three outcomes (the `ms-analisis` filter test is deferred with its queue, Q7), requests and cancellations reach only their queue (adapt `outcome_routing.rs`, `cancellation.rs`) | [ ] |
@@ -163,9 +163,9 @@ metrics) are retired in MSG-09, or replaced by queue-policy and CloudWatch-metri
 
 - [x] Plan written (2026-10-17). SQS/SNS availability probe recorded (see the superseded doc, MQ-01).
 - [x] MSG-01 topology signed off (2026-10-17): fixed visibility timeout, inline outcomes with size guard, standard queues, SSE-SQS with 1 h / 24 h retention on requests, explicit DLQ send for malformed messages, requests and cancellations via SNS, `ms-analisis` queues deferred, `started` is published.
-- [ ] MSG-02..MSG-09 pending.
+- [x] MSG-02 spike passed (2026-10-17): LabRole can use SNS/SQS (SSE-SQS) from an ECS Fargate task.
+- [ ] MSG-03..MSG-09 pending.
 
 ## Next step
 
-MSG-02 (LabRole SQS/SNS from ECS) as soon as
-`infra` has a cluster and a one-off task.
+MSG-03 (LocalStack local setup), in parallel with the remaining infra Phase 1 spikes (5: S3 state bucket, 6: LabRole SSM/Secrets Manager).
