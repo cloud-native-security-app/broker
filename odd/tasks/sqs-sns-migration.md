@@ -40,7 +40,7 @@ Flow: Gateway -> `scan.requests` -> `ms-nmap`; Gateway -> `scan.cancellations` -
 `ms-nmap` -> `scan.outcomes` -> Gateway (`scan.outcome.#`) and `ms-analisis` (`completed`, `failed` only).
 `ms-analisis` has no implementation in this workspace; its queue exists in the topology only.
 
-## Proposed SQS/SNS topology (status: **Proposed**, needs sign-off in MSG-01)
+## SQS/SNS topology (status: **Signed off 2026-10-17**, MSG-01; decisions in the open-questions list below)
 
 Naming keeps the current queue names. SNS topics replace topic exchanges; the AMQP routing key becomes the
 String message attribute `routing_key` (same values as today). All subscriptions use `RawMessageDelivery=true`
@@ -56,8 +56,8 @@ so the SQS body is the bare JSON contract and the attributes arrive as SQS messa
 | DLX `scan.cancellations.dlx` + `ms-nmap.scan-cancellations.dlq` | SQS queue `ms-nmap-scan-cancellations-dlq` | as above |
 | exchange `scan.outcomes` (topic) | SNS topic `scan-outcomes` | attribute `routing_key` in `scan.outcome.started\|completed\|failed` |
 | queue `gateway.scan-outcomes` + binding `scan.outcome.#` | SQS queue `gateway-scan-outcomes` + subscription with `FilterPolicy {"routing_key":[{"prefix":"scan.outcome."}]}` | `maxReceiveCount=3` |
-| queue `ms-analisis.scan-outcomes` + bindings `scan.outcome.completed`, `scan.outcome.failed` | SQS queue `ms-analisis-scan-outcomes` + subscription with `FilterPolicy {"routing_key":["scan.outcome.completed","scan.outcome.failed"]}` | `maxReceiveCount=3`; `started` is dropped by the filter, as today |
-| DLX `scan.outcomes.dlx` + `gateway.scan-outcomes.dlq`, `ms-analisis.scan-outcomes.dlq` | SQS queues `gateway-scan-outcomes-dlq`, `ms-analisis-scan-outcomes-dlq` | two DLQs, one per consumer queue (same as today) |
+| queue `ms-analisis.scan-outcomes` + bindings `scan.outcome.completed`, `scan.outcome.failed` | SQS queue `ms-analisis-scan-outcomes` + subscription with `FilterPolicy {"routing_key":["scan.outcome.completed","scan.outcome.failed"]}` | **Deferred (Q7)**: not created until `ms-analisis` exists |
+| DLX `scan.outcomes.dlx` + `gateway.scan-outcomes.dlq`, `ms-analisis.scan-outcomes.dlq` | SQS queues `gateway-scan-outcomes-dlq`, `ms-analisis-scan-outcomes-dlq` | only `gateway-scan-outcomes-dlq` for now; the `ms-analisis` DLQ is deferred (Q7) |
 | `x-delivery-limit: 3` (quorum) | `RedrivePolicy.maxReceiveCount=3` | counts receives, not requeues; a visibility-timeout expiry also counts |
 | `nack(requeue=false)` on malformed | consumer leaves the message undeleted (or sets visibility to 0) and relies on `maxReceiveCount` | or sends it to the DLQ explicitly (open Q5) |
 | per-service users and permissions | **lost**: all ECS tasks use `LabRole` | document as an accepted tradeoff; queue/topic policies still restrict the SNS->SQS path to the matching topic ARN |
@@ -92,12 +92,12 @@ Queue policies: each SQS queue allows `sqs:SendMessage` only from `sns.amazonaws
 
 1. ~~Visibility timeout for `ms-nmap-scan-requests`: fixed ceiling or heartbeat extension?~~ **Decided 2026-10-17: fixed timeout**, computed in Terraform as `MS_NMAP_SSH_CONNECT_TIMEOUT_SECS + MS_NMAP_SSH_COMMAND_TIMEOUT_SECS + margin` (no `ChangeMessageVisibility` heartbeat).
 2. ~~Maximum `ScanOutcome` size: 256 KB safe or S3 reference?~~ **Decided 2026-10-17: inline with a size guard.** One IP per scan, but the ports/vulnerabilities arrays are unbounded in the schema. `nmap-service` checks the serialized outcome (threshold about 250 KB); above it, it publishes a `failed` outcome with an explicit "result too large" reason. No S3 claim-check.
-3. Standard queues (proposed) or FIFO for requests/cancellations?
-4. Retention and encryption: SSE-SQS vs KMS, and retention for the requests queue and its DLQ (credentials inside).
-5. Poison messages: wait for `maxReceiveCount` (3 visibility cycles) or send malformed messages to the DLQ immediately?
-6. Requests and cancellations through SNS topics (proposed, uniform and extensible) or published straight to the SQS queue (one fewer hop, no fan-out)?
-7. Keep the unused `ms-analisis` queues and DLQ in Terraform even though that service has no code here?
-8. Is `scan.outcome.started` still published by `ms-nmap` (contract says pending)? The filters handle either answer.
+3. ~~Standard queues or FIFO?~~ **Decided 2026-10-17: standard queues and topics.** FIFO cannot order a request against its cancellation (separate queues); duplicates are handled by idempotent consumers deduplicating on `correlation_id`.
+4. ~~Retention and encryption?~~ **Decided 2026-10-17: SSE-SQS (AWS-managed keys, no KMS).** Retention: `ms-nmap-scan-requests` 1 hour, `ms-nmap-scan-requests-dlq` 24 hours (they carry SSH credentials); cancellation and outcome queues use the SQS defaults (4 days, DLQs 14 days).
+5. ~~Poison messages?~~ **Decided 2026-10-17: explicit DLQ send.** On a malformed message the consumer does `SendMessage` to its DLQ and then deletes the original (parity with `nack(requeue=false)`); `maxReceiveCount=3` still covers handler failures. Consumers get their DLQ URL in config.
+6. ~~Requests and cancellations through SNS or straight to SQS?~~ **Decided 2026-10-17: through SNS topics** (uniform, one topic per flow; the gateway does not know its consumers and new subscribers need no gateway change).
+7. ~~Keep the unused `ms-analisis` queues?~~ **Decided 2026-10-17: deferred.** Not created until `ms-analisis` exists; then add its queue, DLQ and filtered subscription to `scan-outcomes` in Terraform (no publisher change).
+8. ~~Is `scan.outcome.started` still published?~~ **Resolved 2026-10-17 from code: yes.** `nmap-service/src/messaging/publisher.rs` publishes `ScanOutcome::Started` (routing key `scan.outcome.started`) before touching the target; only the Gateway consumes it.
 
 ## Scope
 
@@ -134,11 +134,11 @@ Out:
 
 | ID | Task | Done |
 |---|---|---|
-| MSG-01 | Topology design sign-off: resolve open questions Q1-Q8, then freeze the table above as the `infra` TF-10 contract | [ ] |
+| MSG-01 | Topology design sign-off: resolve open questions Q1-Q8, then freeze the table above as the `infra` TF-10 contract | [x] 2026-10-17 |
 | MSG-02 | Spike: `LabRole` can use SQS/SNS from inside a running ECS Fargate task (publish, receive, delete, change visibility, redrive; with and without SSE) and which SSE option works; record yes/no and fallback | [ ] |
 | MSG-03 | LocalStack local setup: `docker-compose.yml` service, init script creating the full topology (`awslocal`), README local-dev section; RED: a test that fails until the topology exists | [ ] |
 | MSG-04 | Contract reuse: `contracts/*.schema.json` validate the SQS bodies; contract test publishes through SNS and validates the received body (adapt `message_contract.rs`) | [ ] |
-| MSG-05 | Message attributes and filtering: define the `routing_key` attribute contract; tests that `ms-analisis` never receives `started`, Gateway receives all three, requests and cancellations reach only their queue (adapt `outcome_routing.rs`, `cancellation.rs`) | [ ] |
+| MSG-05 | Message attributes and filtering: define the `routing_key` attribute contract; tests that the Gateway receives all three outcomes (the `ms-analisis` filter test is deferred with its queue, Q7), requests and cancellations reach only their queue (adapt `outcome_routing.rs`, `cancellation.rs`) | [ ] |
 | MSG-06 | Retry and DLQ tests on LocalStack: `maxReceiveCount=3` moves the message to the DLQ; malformed-message handling per Q5 (adapt `retry_delivery_limit.rs`, `topology_exists.rs`) | [ ] |
 | MSG-07 | Encryption and retention: apply the Q4 decision to the design and tests (`aws:SecureTransport` policy, SSE attributes present, retention values) | [ ] |
 | MSG-08 | Hand-off to `infra`: parameter table (names, timeouts, retention, filters, policies) consumed by TF-10, plus a parity check that LocalStack init and Terraform describe the same topology | [ ] |
@@ -162,9 +162,10 @@ metrics) are retired in MSG-09, or replaced by queue-policy and CloudWatch-metri
 ## Progress
 
 - [x] Plan written (2026-10-17). SQS/SNS availability probe recorded (see the superseded doc, MQ-01).
-- [ ] MSG-01..MSG-09 pending.
+- [x] MSG-01 topology signed off (2026-10-17): fixed visibility timeout, inline outcomes with size guard, standard queues, SSE-SQS with 1 h / 24 h retention on requests, explicit DLQ send for malformed messages, requests and cancellations via SNS, `ms-analisis` queues deferred, `started` is published.
+- [ ] MSG-02..MSG-09 pending.
 
 ## Next step
 
-MSG-01: get the user's decisions on open questions Q1-Q8; in parallel, MSG-02 (LabRole from ECS) can run as soon as
+MSG-02 (LabRole SQS/SNS from ECS) as soon as
 `infra` has a cluster and a one-off task.
