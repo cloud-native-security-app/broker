@@ -9,7 +9,7 @@
 //! de integración de `tests/` se conecten como cada usuario. `definitions.json`
 //! solo puede contener el *hash* de la contraseña (RabbitMQ no expone un
 //! mecanismo confirmado de importar contraseñas en texto plano — ver
-//! `progress/explore_definitions_format.md` §7), así que el valor en claro
+//! `docs/decisions.md` (D-02)), así que el valor en claro
 //! tiene que vivir en un único lugar del lado Rust en vez de en el propio
 //! `definitions.json`; ese lugar es este módulo, también documentado en
 //! `rabbitmq/README.md` para quien no lea Rust.

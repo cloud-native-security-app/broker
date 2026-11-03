@@ -31,7 +31,7 @@ porque un issue documentado de `docker-library/rabbitmq` (#428) reporta que
 `management.load_definitions` falla en cargar correctamente en el
 *primer* arranque del contenedor, mientras que `load_definitions` (soportada
 desde RabbitMQ 3.8.2+) sí funciona de forma fiable. Ver
-`progress/explore_definitions_format.md` §0 para el detalle y las fuentes.
+`docs/decisions.md` (D-02) para el detalle y las fuentes.
 
 `docker-compose.yml` monta ambos archivos; los tests de integración de
 `tests/` (vía `testcontainers`) montan los mismos dos archivos en sus
@@ -91,7 +91,7 @@ corte hacia la `.dlq` — no hace falta ningún exchange/cola de retry
 adicional, ni lógica de "consumidor simulado" en el crate de verificación
 (este repo no implementa consumidores de producción, ver
 `docs/architecture.md`). Justificación completa, comparación con el patrón
-clásico y sintaxis en `progress/explore_retry_pattern.md`.
+clásico y sintaxis en `docs/decisions.md` (D-03).
 
 - **N = 3** reintentos: un mensaje se entrega hasta 4 veces en total (1
   entrega original + 3 redeliveries) antes de dead-letrarse
@@ -159,7 +159,7 @@ Todas las contraseñas de abajo son de laboratorio, usadas únicamente por
 `definitions.json` solo contiene el **hash** de cada contraseña
 (`password_hash`, algoritmo SHA-256 + salt de 4 bytes documentado en
 <https://www.rabbitmq.com/docs/passwords>, ver
-`progress/explore_definitions_format.md` §7) — RabbitMQ no ofrece un
+`docs/decisions.md` (D-02)) — RabbitMQ no ofrece un
 mecanismo confirmado de importar contraseñas en texto plano, y aunque lo
 ofreciera no se comitearían en claro. El valor en texto plano vive en un
 único lugar del lado Rust,

@@ -1,73 +1,82 @@
-# AGENTS.md — Mapa de navegación para agentes de IA
+# Reglas de revisión de código — broker
 
-> Este archivo es el **punto de entrada** para cualquier agente que trabaje en este
-> repositorio. NO es una biblia de reglas: es un **mapa**. Lee solo lo que
-> necesites cuando lo necesites (divulgación progresiva).
+> Reglas que usa el revisor automático (Gentleman Guardian Angel) sobre cada
+> commit. Un diff que viole una regla marcada como **bloqueante** se rechaza.
 
----
+## Contexto
 
-## 1. Antes de empezar (obligatorio)
+`broker` define la infraestructura de mensajería de la plataforma: la
+topología de RabbitMQ (`rabbitmq/definitions.json`), su configuración TLS
+(`rabbitmq/rabbitmq.conf`), los contratos de mensajes en JSON Schema
+(`contracts/`) y un crate Rust (`src/`, `tests/`) que verifica todo eso
+contra un RabbitMQ real. No tiene binario de producción. Por
+`scan.requests` viajan **credenciales SSH reales**
+(`ScanRequest.ssh_credentials_ref`); ver `docs/security-scope.md`.
 
-1. Ejecuta `./init.sh` y verifica que termina sin errores. Si falla, **para**
-   y resuelve el entorno antes de tocar nada.
-2. Lee `progress/current.md` para entender en qué estado quedó la última sesión.
-3. Lee `feature_list.json` y elige **una** tarea con estado `pending`. No
-   trabajes en más de una a la vez.
+## Seguridad (bloqueante)
 
-## 2. Mapa del repositorio
+- Nunca se commitean credenciales, certificados ni claves privadas reales.
+  Las contraseñas de `definitions.json`, los payloads de ejemplo y los
+  certificados de `rabbitmq/tls/` son de laboratorio y deben verse
+  ficticios a simple vista (p. ej. `lab-only-not-a-real-secret`).
+- Toda conexión a RabbitMQ usa AMQPS (TLS). Nunca se deshabilita ni se
+  relaja la verificación del certificado (ni en tests ni "temporalmente").
+  Un puerto AMQP en claro solo se acepta en el compose local, marcado como
+  solo-desarrollo.
+- Mínimo privilegio: un usuario por servicio (`gateway`, `ms-nmap`,
+  `ms-analisis`), con permisos `configure`/`write`/`read` acotados por
+  regex solo a sus exchanges/colas. Se rechaza cualquier regex amplia
+  (`.*`) o un usuario con acceso a la cola de otro servicio.
+- La contraseña del usuario administrador nunca se hardcodea fuera del
+  ámbito de laboratorio; en un entorno real sale de variable de entorno o
+  gestor de secretos.
+- Ningún test, script ni config loguea el cuerpo completo de un mensaje
+  que pueda contener `ssh_credentials_ref`.
+- Las colas no se configuran como almacenamiento de largo plazo (sin TTL
+  ni límites que retengan mensajes con credenciales indefinidamente).
 
-| Archivo / carpeta            | Qué contiene                                              | Cuándo leerlo |
-|------------------------------|-----------------------------------------------------------|---------------|
-| `feature_list.json`          | Lista de tareas con estado (pending / in_progress / done) | Siempre, al empezar |
-| `progress/current.md`        | Estado de la sesión actual                                | Siempre, al empezar |
-| `progress/history.md`        | Bitácora append-only de sesiones anteriores               | Si necesitas contexto histórico |
-| `docs/architecture.md`       | Qué significa "hacer un buen trabajo" en este proyecto    | Antes de implementar |
-| `docs/conventions.md`        | Reglas de estilo, nombres, estructura                     | Antes de escribir nada |
-| `docs/verification.md`       | Cómo verificar que tu trabajo funciona                    | Antes de declarar una tarea como `done` |
-| `docs/security-scope.md`     | Límites de autorización/alcance (TLS, credenciales, permisos) | Antes de tocar usuarios/permisos, TLS o el contrato de mensajes |
-| `CHECKPOINTS.md`             | Criterios objetivos de "estado final correcto"            | Para auto-evaluarte |
-| `.claude/agents/`            | Definiciones de subagentes (líder, implementador, revisor) | Si orquestas trabajo |
-| `docker-compose.yml`         | RabbitMQ local (management + AMQPS) — desde la feature `scaffolding` | Para levantar el entorno local |
-| `rabbitmq/`                  | `definitions.json`: vhost, exchanges, colas, bindings, usuarios/permisos — desde `topology_definition` | Para implementar/entender la topología |
-| `contracts/`                 | JSON Schema + documentación del contrato de mensajes — desde `message_contract` | Para implementar/entender el wire format |
-| `src/`, `tests/`             | Crate Rust de verificación (`testcontainers` + `lapin`), sin binario de producción | Para implementar/correr las pruebas |
+## Topología y contratos (bloqueante)
 
-## 3. Reglas duras (no negociables)
+- `rabbitmq/definitions.json` es la única fuente de verdad de nombres:
+  vhost, exchanges, colas, bindings, usuarios y permisos. Tests y docs que
+  citan un nombre deben coincidir exactamente con ese archivo.
+- Nombres según `docs/conventions.md`: exchanges `dominio.acción`
+  (`scan.requests`), DLX `<exchange>.dlx`, colas
+  `<servicio-consumidor>.<qué-consume>`, DLQ `<cola>.dlq`, routing keys
+  que describen el evento y no el destinatario.
+- Toda cola de trabajo tiene su dead-letter (`x-dead-letter-exchange`) y,
+  si aplica, `x-delivery-limit`, declarados en `arguments` o `policies`,
+  nunca implícitos en el código de los tests.
+- Un cambio en `contracts/*.schema.json` refleja literalmente la forma que
+  ya implementa el productor/consumidor (`ms-nmap` `domain.rs`). Un cambio
+  incompatible del contrato es una decisión explícita, documentada en
+  `contracts/README.md` y `docs/decisions.md`, no un ajuste silencioso.
+- No se crea un exchange nuevo solo porque un consumidor quiere un
+  subconjunto de eventos existentes: se usa otro binding con routing key.
 
-- **Una sola feature a la vez.** No mezcles cambios de varias tareas en la misma sesión.
-- **No declares una tarea `done` sin pruebas verdes.** Ejecuta `./init.sh` y
-  asegúrate de que el bloque de tests pasa al 100%.
-- **Documenta lo que haces** en `progress/current.md` mientras trabajas, no al final.
-- **Deja el repositorio limpio** antes de cerrar la sesión (ver §5).
-- **Si no sabes algo, busca en `docs/`** antes de inventarlo.
-- **Antes de tocar TLS, usuarios/permisos de RabbitMQ o el contenido del
-  contrato de mensajes**, lee `docs/security-scope.md`. Si la feature roza
-  esos límites y no está claro cómo proceder, para y pregunta al usuario.
-- **Nunca uses credenciales reales** (ni de RabbitMQ ni del contrato de
-  mensajes) en tests, fixtures o ejemplos — solo valores de laboratorio.
+## Corrección (bloqueante)
 
-## 4. Cómo elegir una tarea
+- Nada de `unwrap()`/`expect()`/`panic!()` fuera de tests.
+- Errores tipados con `thiserror`; nada de `String` como tipo de error.
+- Ninguna llamada bloqueante dentro de código async (`tokio`).
 
-```
-1. Abre feature_list.json
-2. Filtra por status == "pending"
-3. Coge la de menor "id"
-4. Cambia su status a "in_progress" y guarda
-5. Anota en progress/current.md: feature, hora de inicio, plan breve
-```
+## Tests
 
-## 5. Cierre de sesión (lifecycle)
+- Todo cambio de topología, permisos, TLS o contrato trae su test en el
+  mismo commit.
+- Los tests de integración corren contra `rabbitmq:management` real vía
+  `testcontainers`, marcados `#[ignore = "requiere Docker"]`; nunca mocks
+  de RabbitMQ ni instancias de staging/producción.
+- Los tests de permisos cubren el caso positivo (el servicio accede a lo
+  suyo) y el negativo (acceso denegado a lo ajeno).
+- Nombres descriptivos del comportamiento
+  (`ms_nmap_user_cannot_publish_to_ms_analisis_queue`).
 
-Antes de terminar:
+## Estilo
 
-1. Ejecuta `./init.sh` — todo verde.
-2. Si la tarea está acabada: marca `status: "done"` en `feature_list.json`.
-3. Mueve el resumen de `progress/current.md` al final de `progress/history.md`.
-4. Vacía `progress/current.md` dejando solo la plantilla.
-5. No dejes archivos temporales, contenedores huérfanos, ni TODOs sin contexto.
-
-## 6. Si te bloqueas
-
-- Relee la sección relevante de `docs/`.
-- Si la herramienta no hace lo que esperas, **no inventes un workaround**:
-  documenta el bloqueo en `progress/current.md` y para la sesión.
+- `cargo fmt` y `cargo clippy --all-targets -- -D warnings` sin warnings
+  (`make verify` corre ambos).
+- Sin `println!`/`dbg!` de depuración ni TODOs sin contexto.
+- Comentarios solo para explicar un *por qué* no obvio.
+- Nombres: `snake_case` para módulos, funciones y variables; `PascalCase`
+  para tipos; `UPPER_SNAKE` para constantes.

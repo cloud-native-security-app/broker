@@ -122,7 +122,7 @@ define el canal y el contrato.
    sin cliente de producción.
 
 No introducir capas adicionales hasta que haya una razón concreta
-documentada en `feature_list.json`.
+documentada en `docs/decisions.md`.
 
 ## Contrato de mensajes (referencia — se congela en las features `message_contract` y `cancellation_contract`)
 
@@ -180,7 +180,7 @@ honrar la cancelación es trabajo pendiente en `ms-nmap`, RF-14):
   que tenga (p. ej. validación de schema).
 - Un fallo de un test de integración nunca se "arregla" reemplazándolo por
   un mock — se documenta el bloqueo (p. ej. Docker no disponible) en
-  `progress/current.md`.
+  el feature doc de `odd/tasks/`.
 
 ## Despliegue (feature `deployment_docs`)
 
@@ -246,8 +246,8 @@ verificar contra código real.
   actuales de `topology_definition` verifican la topología resultante,
   pero vía montaje de archivo + arranque del nodo, no vía el comando
   `import_definitions` en un nodo ya corriendo) — quedaría como una
-  feature nueva a decidir explícitamente con el usuario, no se agrega a
-  `feature_list.json` en esta sesión.
+  feature nueva a decidir explícitamente con el usuario, no se agrega al
+  plan actual.
 - Reemplazar el placeholder genérico del proveedor cloud por el mecanismo
   real una vez se decida una plataforma de despliegue concreta.
 

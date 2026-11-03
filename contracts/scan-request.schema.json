@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://security-app.example.test/broker/contracts/scan-request.schema.json",
   "title": "ScanRequest",
-  "description": "Mensaje publicado por el Gateway en el exchange scan.requests (routing key scan.request) y consumido por ms-nmap. Shape copiado literalmente de nmap-service/src/domain.rs (ver progress/explore_ms_nmap_contract.md §1) — ssh_credentials_ref viaja como string plano con la credencial SSH real, nunca una referencia opaca (ver docs/security-scope.md).",
+  "description": "Mensaje publicado por el Gateway en el exchange scan.requests (routing key scan.request) y consumido por ms-nmap. Shape copiado literalmente de nmap-service/src/domain.rs (ver `docs/decisions.md` (D-08)) — ssh_credentials_ref viaja como string plano con la credencial SSH real, nunca una referencia opaca (ver docs/security-scope.md).",
   "type": "object",
   "properties": {
     "correlation_id": {

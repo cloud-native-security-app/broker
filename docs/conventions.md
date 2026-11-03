@@ -82,7 +82,7 @@
 - **Todo test que dependa de Docker se marca**
   `#[ignore = "requiere Docker"]`. `cargo test` (sin flags) corre rápido y
   sin depender de Docker; `cargo test -- --ignored` corre los de
-  integración. `init.sh` ejecuta ambos.
+  integración. `make verify` ejecuta ambos.
 
 ## Nombres (código Rust)
 

@@ -127,7 +127,7 @@ mod tests {
     }
 
     /// Payload real de ejemplo citado en
-    /// `progress/explore_ms_nmap_contract.md` §2 (test
+    /// `docs/decisions.md` (D-08) (test
     /// `completed_outcome_serializes_to_expected_message_shape` de
     /// `ms-nmap`).
     fn valid_scan_outcome_completed() -> Value {
@@ -162,7 +162,7 @@ mod tests {
     }
 
     /// Payload real de ejemplo citado en
-    /// `progress/explore_ms_nmap_contract.md` §2 (test
+    /// `docs/decisions.md` (D-08) (test
     /// `failed_outcome_serializes_with_correlation_id_and_reason` de
     /// `ms-nmap`).
     fn valid_scan_outcome_failed() -> Value {

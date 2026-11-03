@@ -3,11 +3,11 @@
 //! `basic.reject(requeue=true)` se sigue reentregando en la cola original
 //! (entrega original + hasta 3 redeliveries) antes de que RabbitMQ lo
 //! dead-lettere automáticamente hacia la `.dlq`, sin intervención de ningún
-//! consumidor — ver `progress/explore_retry_pattern.md` §3, §5 y §7 para
+//! consumidor — ver `docs/decisions.md` (D-03) para
 //! la justificación de N=3, y la nota empírica abajo para detalles del
 //! comportamiento observado contra un broker real.
 //!
-//! **Nota empírica (desviación de `progress/explore_retry_pattern.md`,
+//! **Nota empírica (desviación de `docs/decisions.md` (D-03),
 //! confirmada contra RabbitMQ 4.3.5 real, no solo por documentación):**
 //! el contador que RabbitMQ compara contra `x-delivery-limit` es
 //! `x-delivery-count`, que **solo se incrementa con `basic.reject`** (el
@@ -65,7 +65,7 @@ async fn poll_get(channel: &lapin::Channel, queue: &str) -> Option<Delivery> {
 /// Busca, dentro del header `x-death` (array de tablas AMQP), la entrada
 /// cuyo campo `queue` coincide con `expected_queue`, y devuelve su
 /// `reason`. Formato de `x-death` documentado en
-/// `progress/explore_retry_pattern.md` §2 / `explore_definitions_format.md` §8.2.
+/// `docs/decisions.md` (D-03) / D-02.
 fn x_death_reason_for_queue(delivery: &Delivery, expected_queue: &str) -> String {
     let headers = delivery
         .properties

@@ -5,9 +5,8 @@ documentación de qué exchange/routing-key transporta cada mensaje y quién
 publica/consume. El contrato **se copia literalmente** de lo que `ms-nmap`
 ya implementa y testea (`src/domain.rs`, `src/messaging/publisher.rs`), no
 se re-deriva desde cero — ver
-[`progress/explore_ms_nmap_contract.md`](../progress/explore_ms_nmap_contract.md)
-(investigación del leader, con citas literales/líneas exactas del repo
-hermano `nmap-service`) para el rastro de esa verificación.
+[`docs/decisions.md`](../docs/decisions.md) (D-08) para el rastro de esa
+verificación contra el repo hermano `nmap-service`.
 
 ## Archivos
 
@@ -24,7 +23,7 @@ hermano `nmap-service`) para el rastro de esa verificación.
 - **Publica:** Gateway.
 - **Consume:** `ms-nmap` (cola `ms-nmap.scan-requests`).
 - **Fuente:** `nmap-service/src/domain.rs` líneas 133–156 (struct `ScanRequest`),
-  contrastado en `progress/explore_ms_nmap_contract.md` §1.
+  contrastado en `docs/decisions.md` (D-08).
 
 Los 6 campos son `required` y el schema usa `additionalProperties: false` —
 ningún campo extra pasa silenciosamente.
@@ -64,10 +63,10 @@ implementación conforme al draft).
     (RF-07/RF-08).
 - **Fuente `completed`/`failed`:** `nmap-service/src/messaging/publisher.rs`
   líneas 62–91 (enum `ScanOutcome`, `#[serde(tag = "status", rename_all =
-  "snake_case")]`), contrastado en `progress/explore_ms_nmap_contract.md` §2.
+  "snake_case")]`), contrastado en `docs/decisions.md` (D-08).
 - **Fuente `ScanResult` (anidado en `completed`):**
   `nmap-service/src/domain.rs` líneas 213–298, contrastado en
-  `progress/explore_ms_nmap_contract.md` §2.1.
+  `docs/decisions.md` (D-08).
 
 ### Variante `started` — contrato acordado, publicación PENDIENTE en `ms-nmap`
 
@@ -76,7 +75,7 @@ para RF-07/RF-08 (que el Gateway pueda reflejar el estado EN_PROGRESO), pero
 **no existe todavía en el código real de `ms-nmap`** — el enum `ScanOutcome`
 de `nmap-service/src/messaging/publisher.rs` solo tiene las variantes
 `Completed`/`Failed` a día de hoy (confirmado en
-`progress/explore_ms_nmap_contract.md` §2, líneas 77–82). Este repo define el
+`docs/decisions.md`, D-08). Este repo define el
 canal (exchange, routing key, binding en `gateway.scan-outcomes`) y el
 schema para que `ms-nmap` pueda implementarla sin renegociar el contrato,
 pero **no afirma que `ms-nmap` la publique ya**. Implementarla y publicarla
@@ -86,7 +85,7 @@ repo.
 ### `completed` vs `failed`: sin campos cruzados
 
 Confirmado por los tests de `ms-nmap` citados en
-`progress/explore_ms_nmap_contract.md` §2 (`json.get("reason").is_none()`
+`docs/decisions.md` (D-08) (`json.get("reason").is_none()`
 para `completed`, `json.get("result").is_none()` para `failed`): cada
 variante tiene `additionalProperties: false` y solo sus propios campos — un
 mensaje `completed` con un `reason` colado (o un `failed` con `result`) es
@@ -97,7 +96,7 @@ inválido contra el schema.
 `ms-nmap` tolera, **al deserializar** documentos viejos de su propia base de
 datos (no mensajes del Broker), que `PortFinding.cpes`,
 `VulnFinding.references` y `VulnFinding.source` falten (ver
-`progress/explore_ms_nmap_contract.md` §2.1). Esta tolerancia es una
+`docs/decisions.md`, D-08). Esta tolerancia es una
 decisión de persistencia interna de `ms-nmap`, no del contrato de
 mensajería: el mensaje `ScanOutcome.completed` que `ms-nmap` **publica** en
 el Broker siempre incluye esos campos (aunque sea con `[]` o el valor por
@@ -159,9 +158,9 @@ versionado antes de tocar estos schemas.
 
 Los ejemplos usados en los tests de este repo
 (`src/contracts.rs`, `tests/message_contract.rs`) son literalmente los
-citados en `progress/explore_ms_nmap_contract.md` (extraídos de los propios
+citados en `docs/decisions.md` (D-08) (extraídos de los propios
 tests de `ms-nmap`) para `completed`/`failed`, y el shape acordado en
-`feature_list.json` para `started`. Ningún ejemplo usa una credencial SSH
+el plan del repo para `started`. Ningún ejemplo usa una credencial SSH
 real: el `ssh_credentials_ref` de los payloads de ejemplo es siempre un
 valor de laboratorio explícitamente ficticio (p. ej.
 `"lab-only-not-a-real-secret"`), nunca el que aparece en el test real de

@@ -49,7 +49,7 @@ async fn wait_for_message(channel: &lapin::Channel, queue: &str) -> Vec<u8> {
 /// debe fallar con un *soft error* AMQP (403 ACCESS_REFUSED), cerrando el
 /// canal — nunca la conexión completa. `basic.get` es una RPC síncrona:
 /// el error llega en el primer `.await`, sin ambigüedad de confirmación
-/// asíncrona (ver `progress/explore_lapin_testcontainers.md` §2).
+/// asíncrona (ver `docs/decisions.md` (D-07)).
 async fn assert_read_denied(connection: &lapin::Connection, queue: &str) {
     let channel = connection
         .create_channel()

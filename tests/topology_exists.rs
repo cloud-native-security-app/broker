@@ -10,7 +10,7 @@
 //! nunca con un usuario de servicio — ver `docs/security-scope.md`) porque
 //! expone `arguments`/`routing_key` exactos, cosa que una declaración AMQP
 //! pasiva no siempre deja inspeccionar cómodamente (ver
-//! `progress/explore_lapin_testcontainers.md` §3-4).
+//! `docs/decisions.md` (D-07)).
 
 mod common;
 
