@@ -3,5 +3,7 @@
 .env
 *.pem
 *.key
+
+.atl
 # Local Gentleman Guardian Angel config
 .gga
