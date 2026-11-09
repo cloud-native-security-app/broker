@@ -1,0 +1,14 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a06",
+  "event_type": "finding.critical",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "nmap-service",
+  "scan_id": "corr-42",
+  "payload": {
+    "port": 22,
+    "protocol": "tcp",
+    "cve_id": "CVE-2023-38408",
+    "severity": "critical",
+    "confidence": "confirmed"
+  }
+}

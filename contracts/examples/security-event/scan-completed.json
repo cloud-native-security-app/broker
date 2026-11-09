@@ -1,0 +1,18 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a04",
+  "event_type": "scan.completed",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "nmap-service",
+  "scan_id": "corr-42",
+  "payload": {
+    "duration_ms": 42000,
+    "finding_counts": {
+      "critical": 1,
+      "high": 2,
+      "medium": 3,
+      "low": 4,
+      "info": 5,
+      "unknown": 0
+    }
+  }
+}

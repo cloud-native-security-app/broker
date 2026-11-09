@@ -1,0 +1,8 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a07",
+  "event_type": "auth.login",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "gateway",
+  "actor_sub": "user-sub-123",
+  "payload": {}
+}

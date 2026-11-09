@@ -1,0 +1,10 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a0a",
+  "event_type": "message.deadlettered",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "gateway",
+  "payload": {
+    "queue": "gateway-scan-outcomes",
+    "reason_code": "malformed_message"
+  }
+}

@@ -85,7 +85,7 @@ define el canal y el contrato.
 ## Capas / directorios
 
 1. **`contracts/`** — JSON Schema de cada tipo de mensaje (`ScanRequest`,
-   `ScanOutcome`, `ScanCancellation`) + documentación (`contracts/README.md`)
+   `ScanOutcome`, `ScanCancellation`, `SecurityEvent` para Kinesis) + documentación (`contracts/README.md`)
    de qué tópico/routing key transporta cada uno y quién publica/consume.
 2. **`src/`** — helpers puros: `contracts.rs` (validación de payloads) y
    `topology.rs` (topología esperada). Sin lógica de negocio, sin cliente de
