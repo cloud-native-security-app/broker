@@ -137,12 +137,12 @@ Out:
 | MSG-01 | Topology design sign-off: resolve open questions Q1-Q8, then freeze the table above as the `infra` TF-10 contract | [x] 2026-10-17 |
 | MSG-02 | Spike: `LabRole` can use SQS/SNS from inside a running ECS Fargate task (publish, receive, delete, change visibility, redrive; with and without SSE) and which SSE option works; record yes/no and fallback. **Result 2026-10-17: YES.** A Fargate task (image `public.ecr.aws/aws-cli/aws-cli`, task and execution role `LabRole`, default VPC with public IP) ran as `assumed-role/LabRole` and passed: SNS publish with a `routing_key` attribute, SQS receive through the raw-delivery subscription, change-visibility, send to the DLQ, delete, get-attributes, all on SSE-SQS queues. Test resources deleted afterwards. Gotchas: the first `run-task` in a fresh account fails until the ECS service-linked role propagates (retry); a deleted queue name cannot be reused for 60 s. | [x] 2026-10-17 |
 | MSG-03 | LocalStack local setup: `docker-compose.yml` service, init script creating the full topology (`awslocal`), README local-dev section; RED: a test that fails until the topology exists | [x] 2026-11-09, by reconciliation: delivered in `infra` (see Reconciliation) |
-| MSG-04 | Contract reuse: `contracts/*.schema.json` validate the SQS bodies; contract test publishes through SNS and validates the received body (adapt `message_contract.rs`) | [ ] |
-| MSG-05 | Message attributes and filtering: define the `routing_key` attribute contract; tests that the Gateway receives all three outcomes (the `ms-analisis` filter test is deferred with its queue, Q7), requests and cancellations reach only their queue (adapt `outcome_routing.rs`, `cancellation.rs`) | [ ] |
-| MSG-06 | Retry and DLQ tests on LocalStack: `maxReceiveCount=3` moves the message to the DLQ; malformed-message handling per Q5 (adapt `retry_delivery_limit.rs`, `topology_exists.rs`) | [ ] |
-| MSG-07 | Encryption and retention: apply the Q4 decision to the design and tests (`aws:SecureTransport` policy, SSE attributes present, retention values) | [ ] |
-| MSG-08 | Hand-off to `infra`: parameter table (names, timeouts, retention, filters, policies) consumed by TF-10, plus a parity check that LocalStack init and Terraform describe the same topology | [ ] |
-| MSG-09 | Broker repo retirement: remove `rabbitmq/`, AMQP test code and `lapin`/testcontainers-rabbitmq dev-dependencies; keep `contracts/`, `docs/security-scope.md` and the topology design; update `README.md`, `docs/architecture.md`, `docs/decisions.md` (new decision: SQS/SNS) | [ ] |
+| MSG-04 | Contract reuse: `contracts/*.schema.json` validate the SQS bodies; contract test publishes through SNS and validates the received body (adapt `message_contract.rs`) | [x] 2026-11-09, commit 8c09e62: `tests/sns_sqs_contract.rs` (SNS publish, SQS bare body validated against `contracts/`) |
+| MSG-05 | Message attributes and filtering: define the `routing_key` attribute contract; tests that the Gateway receives all three outcomes (the `ms-analisis` filter test is deferred with its queue, Q7), requests and cancellations reach only their queue (adapt `outcome_routing.rs`, `cancellation.rs`) | [x] 2026-11-09, commit 8c09e62: `routing_key` attribute and filter tests, positive and negative (`tests/sns_sqs_contract.rs`) |
+| MSG-06 | Retry and DLQ tests on LocalStack: `maxReceiveCount=3` moves the message to the DLQ; malformed-message handling per Q5 (adapt `retry_delivery_limit.rs`, `topology_exists.rs`) | [x] 2026-11-09, commit 8c09e62: `tests/dlq_retry.rs` (3 receives then DLQ; deleted message never redriven). Q5 explicit DLQ send stays with the consumers |
+| MSG-07 | Encryption and retention: apply the Q4 decision to the design and tests (`aws:SecureTransport` policy, SSE attributes present, retention values) | [x] 2026-11-09, commit 8c09e62: `tests/encryption_retention.rs` (SSE-SQS, no KMS, retention, visibility, redrive, raw delivery, filters); `aws:SecureTransport` and SNS source ARN by parity with `messaging.tf` |
+| MSG-08 | Hand-off to `infra`: parameter table (names, timeouts, retention, filters, policies) consumed by TF-10, plus a parity check that LocalStack init and Terraform describe the same topology | [x] 2026-11-09, commit 8c09e62: hand-off consumed by infra TF-10; parity in `tests/topology_parity.rs` (offline, skips if `../infra` is absent) |
+| MSG-09 | Broker repo retirement: remove `rabbitmq/`, AMQP test code and `lapin`/testcontainers-rabbitmq dev-dependencies; keep `contracts/`, `docs/security-scope.md` and the topology design; update `README.md`, `docs/architecture.md`, `docs/decisions.md` (new decision: SQS/SNS) | [x] 2026-11-09, commit ee1aaa4: `rabbitmq/`, RabbitMQ compose, AMQP tests, `lapin`/rustls/reqwest/testcontainers-modules removed; README, architecture, conventions, verification, security-scope, decisions (D-13), AGENTS.md and `contracts/` updated; Makefile `compose-check` dropped |
 
 Tests with no SQS/SNS equivalent (`permissions.rs`: per-user ACLs; `tls.rs`: AMQPS/lab CA; `observability.rs`: RabbitMQ
 metrics) are retired in MSG-09, or replaced by queue-policy and CloudWatch-metric checks if cheap.
@@ -166,6 +166,18 @@ LocalStack integration tests (`testcontainers`, image `localstack/localstack:4.4
 themselves through the AWS SDK; an offline (non-ignored) test reads the sibling `../infra` files for parity and skips
 with a printed notice when the sibling checkout is absent (CI of this repo alone).
 
+## Verification evidence (2026-11-09)
+
+Strict TDD, RED observed before GREEN:
+- `src/topology.rs`: 6 unit tests written against `todo!()` stubs: 6 failed, then 6 passed after implementation.
+- Tests that passed on first run were hardened and shown RED by mutation: gateway filter removed gave 4 messages instead of 3
+  (`sns_sqs_contract`); `MAX_RECEIVE_COUNT` 5 left the message in the source queue (`dlq_retry`); retention dropped from the helper
+  failed `encryption_retention`; `MAX_RECEIVE_COUNT` 5 and requests retention 7200 failed `topology_parity`. A first version of the
+  filter test and the DLQ test were circular (they read the value they were testing) and were fixed.
+- Known limit: LocalStack reports SSE-SQS as on by default, so the SSE assertion is a guard (also `KmsMasterKeyId` absent); the SSE
+  declaration itself is covered by the `messaging.tf` parity.
+- `make verify`: exit 0 (fmt, clippy `-D warnings`, 21 unit + 2 parity tests, 7 LocalStack integration tests, doc).
+
 ## Acceptance criteria
 
 - The topology table is signed off and every RabbitMQ element has a documented SNS/SQS counterpart.
@@ -183,8 +195,9 @@ with a printed notice when the sibling checkout is absent (CI of this repo alone
 - [x] Plan written (2026-10-17). SQS/SNS availability probe recorded (see the superseded doc, MQ-01).
 - [x] MSG-01 topology signed off (2026-10-17): fixed visibility timeout, inline outcomes with size guard, standard queues, SSE-SQS with 1 h / 24 h retention on requests, explicit DLQ send for malformed messages, requests and cancellations via SNS, `ms-analisis` queues deferred, `started` is published.
 - [x] MSG-02 spike passed (2026-10-17): LabRole can use SNS/SQS (SSE-SQS) from an ECS Fargate task.
-- [ ] MSG-03..MSG-09 pending.
+- [x] 2026-11-09 reconciliation (commit 0509ac1): MSG-03 and the MSG-08 hand-off were already delivered in `infra`.
+- [x] 2026-11-09 MSG-04..MSG-08 (commit 8c09e62) and MSG-09 (commit ee1aaa4) on branch `feature/retire_rabbitmq`.
 
 ## Next step
 
-MSG-03 (LocalStack local setup), in parallel with the remaining infra Phase 1 spikes (5: S3 state bucket, 6: LabRole SSM/Secrets Manager).
+Feature complete on `feature/retire_rabbitmq`; push, PR and merge are the user's decision. Then the Kinesis event contract can be added to this repo.
