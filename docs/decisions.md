@@ -2,10 +2,11 @@
 
 Registro breve (estilo ADR) de las decisiones tomadas durante la construcción
 del Broker: decisión, contexto y consecuencia. El estado actual de la
-topología y del contrato vive en `rabbitmq/`, `contracts/` y
-`docs/architecture.md`; este archivo explica el *por qué*.
+topología y del contrato vive en `src/topology.rs`, `contracts/` y
+`docs/architecture.md`; este archivo explica el *por qué*. Las decisiones
+D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
 
-## D-01 RabbitMQ como tecnología del Broker
+## D-01 RabbitMQ como tecnología del Broker (reemplazada por D-13)
 
 - **Decisión:** RabbitMQ (reemplaza menciones anteriores de SQS/NATS/Kafka).
 - **Contexto:** el sistema necesita enrutamiento por topic, reintentos acotados
@@ -136,3 +137,25 @@ topología y del contrato vive en `rabbitmq/`, `contracts/` y
 
 - **Decisión:** se eliminó `futures` de `Cargo.toml` por no usarse.
 - **Consecuencia:** el crate solo declara dependencias con uso real.
+
+## D-13 SNS + SQS reemplaza a RabbitMQ
+
+- **Decisión:** la mensajería es AWS SNS + SQS (tópicos `scan-requests`,
+  `scan-cancellations`, `scan-outcomes`; colas `ms-nmap-scan-requests`,
+  `ms-nmap-scan-cancellations`, `gateway-scan-outcomes` con su `-dlq`,
+  `maxReceiveCount=3`, entrega raw, filtro por `routing_key`). Este repo deja de
+  ser un broker: conserva `contracts/`, `docs/security-scope.md` y la topología
+  esperada como datos puros en `src/topology.rs`, y la verifica contra
+  LocalStack. Se eliminan `rabbitmq/`, el compose de RabbitMQ y las pruebas AMQP.
+- **Contexto:** Amazon MQ está denegado en el Learner Lab (2026-10-17) y la meta
+  del curso es una arquitectura cloud-native sobre servicios gestionados. Diseño
+  firmado en `odd/tasks/sqs-sns-migration.md` (MSG-01); `infra` lo implementa en
+  Terraform y en el init de LocalStack. SQS no admite puntos de forma segura en
+  los nombres, por eso `ms-nmap.scan-requests` pasa a `ms-nmap-scan-requests` y
+  `.dlq` a `-dlq`.
+- **Consecuencia:** se pierden los usuarios por servicio y TLS propio (todas las
+  tareas ECS usan `LabRole`; se mitiga con políticas de recurso). Entrega
+  at-least-once: los consumidores deben ser idempotentes por `correlation_id`.
+  Cifrado SSE-SQS (sin KMS) y retención de 1 h en requests y 24 h en su DLQ.
+  `tests/topology_parity.rs` evita que `src/topology.rs`, `messaging.tf` y
+  `localstack-init.sh` diverjan.

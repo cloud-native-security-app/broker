@@ -2,19 +2,14 @@
 //! Broker. No es una librería compartida ni produce un binario de
 //! producción — ver `docs/architecture.md`.
 //!
-//! Desde la feature `topology_definition` este crate expone un único
-//! módulo público, [`lab_credentials`], con las credenciales de
-//! laboratorio (nunca reales) usadas tanto para calcular los
-//! `password_hash` de `rabbitmq/definitions.json` como para que los tests
-//! de integración de `tests/` se conecten como cada usuario. `definitions.json`
-//! solo puede contener el *hash* de la contraseña (RabbitMQ no expone un
-//! mecanismo confirmado de importar contraseñas en texto plano — ver
-//! `docs/decisions.md` (D-02)), así que el valor en claro
-//! tiene que vivir en un único lugar del lado Rust en vez de en el propio
-//! `definitions.json`; ese lugar es este módulo, también documentado en
-//! `rabbitmq/README.md` para quien no lea Rust.
+//! Expone dos módulos de datos puros: [`contracts`] (validación de payloads
+//! contra los JSON Schema de `contracts/`) y [`topology`] (la topología
+//! SNS + SQS esperada, fuente de verdad de nombres y parámetros; ver
+//! `docs/decisions.md` D-13). La sección de credenciales RabbitMQ de
+//! etapas anteriores se retira junto con `rabbitmq/`.
 
 pub mod contracts;
+pub mod topology;
 
 /// Vhost dedicado del Broker (ver `rabbitmq/definitions.json`).
 pub const VHOST: &str = "security-app";

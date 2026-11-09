@@ -17,6 +17,8 @@ thiserror = "2.0"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
 
 [dev-dependencies]
+aws-sdk-sns = "1.116.0"
+aws-sdk-sqs = "1.114.0"
 # Solo para instalar explícitamente el CryptoProvider de rustls antes de
 # abrir una conexión AMQPS en los tests (ver tests/common/mod.rs,
 # `ensure_rustls_crypto_provider`) — este crate ya trae `rustls` de forma
