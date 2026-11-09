@@ -7,13 +7,7 @@
 
 ### Nivel 0 — Artefactos estructuralmente válidos (obligatorio)
 
-```bash
-docker compose config          # si existe docker-compose.yml
-```
-
-Y, para cada JSON Schema en `contracts/` y para `rabbitmq/definitions.json`:
-son JSON válido y, en el caso de los schemas, JSON Schema válido (se puede
-verificar con un test Rust que los cargue con el crate `jsonschema`, no hace
+Cada JSON Schema en `contracts/` es JSON válido y JSON Schema válido (lo verifica un test Rust que los carga con el crate `jsonschema`; no hace
 falta una herramienta externa).
 
 ### Nivel 1 — Tests unitarios (obligatorio si hay lógica pura)
@@ -36,48 +30,56 @@ cargo clippy --all-targets -- -D warnings
 Ningún warning de clippy se ignora en silencio; si es un falso positivo, se
 documenta con `#[allow(...)]` y un comentario explicando por qué.
 
-### Nivel 3 — Tests de integración (obligatorio desde la feature `topology_definition`)
+### Nivel 3 — Tests de integración con LocalStack
 
-- Contra un contenedor `rabbitmq:<tag>-management` real, levantado con
-  `testcontainers` en el propio test. **Nunca** contra una instancia de
-  RabbitMQ de staging/producción.
+- Contra un contenedor `localstack/localstack:4.4` real, levantado con
+  `testcontainers` en el propio test, que crea la topología desde
+  `src/topology.rs`. **Nunca** contra una cuenta AWS real.
 - Se marcan `#[ignore = "requiere Docker"]` (ver `docs/conventions.md`), se
-  ejecutan con `cargo test -- --ignored`, y requieren Docker disponible. Si
-  falla por falta de Docker, se documenta como bloqueo en
-  el feature doc de `odd/tasks/` — no se reemplaza por un mock.
-- Cubren, como mínimo: la topología existe tal cual `definitions.json` la
-  declara; cada usuario de servicio puede hacer **solo** lo suyo (positivo
-  + negativo); el dead-lettering funciona; TLS es exigible (una conexión
-  sin TLS se rechaza, o la limitación de la imagen usada para probarlo
-  queda documentada).
+  ejecutan con `cargo test -- --ignored`, y requieren Docker. Si falla por
+  falta de Docker, se documenta como bloqueo en el feature doc de
+  `odd/tasks/` — no se reemplaza por un mock.
+- Cubren, como mínimo: un payload publicado por SNS llega a SQS íntegro y
+  cumple su JSON Schema; `routing_key` y filtros enrutan exactamente (con
+  casos negativos); tras 3 recepciones sin borrar el mensaje cae en la DLQ;
+  SSE-SQS, retención, visibilidad, redrive y suscripciones raw están presentes.
+- LocalStack no aplica cifrado ni políticas: esas piezas se verifican como
+  atributos almacenados y, para las políticas (`aws:SecureTransport`, origen
+  SNS), por paridad con `terraform/messaging.tf`.
 
-### Nivel 4 — Smoke test end-to-end del contrato (obligatorio para `message_contract`)
+### Nivel 3b — Paridad offline con `infra`
 
-Publica un `ScanRequest` de ejemplo (con un `ssh_credentials_ref` de
-laboratorio, nunca real) en el exchange correspondiente y verifica que
-llega íntegro a la cola de `ms-nmap`; publica un `ScanOutcome` de ejemplo
-(caso `completed` y caso `failed`) y verifica que llega a la cola de
-`ms-analisis`. Ambos payloads deben además validar contra su JSON Schema de
-`contracts/`.
+`tests/topology_parity.rs` compara `src/topology.rs` con
+`../infra/terraform/messaging.tf` y `../infra/scripts/localstack-init.sh`
+(nombres, filtros, `maxReceiveCount`, retenciones, fórmula de visibilidad).
+Corre en `cargo test` sin Docker; si `../infra` no existe, avisa y se omite.
+Busca literales estables, no hace un parseo completo de HCL o shell.
+
+### Nivel 4 — Contrato extremo a extremo
+
+`tests/sns_sqs_contract.rs` publica un `ScanRequest`, un `ScanCancellation` y
+las tres variantes de `ScanOutcome` (con un `ssh_credentials_ref` de
+laboratorio, nunca real) y verifica llegada íntegra, atributo `routing_key` y
+validación contra los schemas de `contracts/`.
 
 ## Anti-patrones (no hacer)
 
 - ❌ "Definí la topología, debería funcionar." → falta test ejecutable
-  contra un RabbitMQ real.
+  contra LocalStack.
 - ❌ Test que solo verifica que la conexión no falla. → tiene que
-  comprobar el contenido concreto (existencia exacta de exchange/cola/
-  binding, permisos exactos).
-- ❌ Probar contra una instancia de RabbitMQ de staging o producción, o con
+  comprobar el contenido concreto (existencia exacta de tópico/cola/
+  suscripción, atributos exactos).
+- ❌ Probar contra una cuenta AWS de staging o producción, o con
   credenciales reales de ningún tipo.
 - ❌ Silenciar un warning de `clippy` con `#[allow(...)]` sin comentario.
 - ❌ Marcar una tarea como completada sin pasar `make verify`.
-- ❌ Dar por buena una topología donde un usuario tiene más permisos de los
-  que su servicio necesita "por si acaso".
+- ❌ Cambiar nombres o parámetros en `infra` sin actualizar `src/topology.rs`
+  (y viceversa): la paridad debe seguir verde.
 
 ## Verificación final antes de cerrar
 
 ```bash
-make verify         # fmt, clippy, tests, tests con Docker, doc, compose config
+make verify         # fmt, clippy, tests, tests con Docker, doc
 ```
 
 Si `make verify` está rojo, **no** marques nada como completado. Anota el

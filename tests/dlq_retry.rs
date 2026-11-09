@@ -1,6 +1,5 @@
 //! MSG-06: `RedrivePolicy.maxReceiveCount=3` moves a message that is received
-//! three times without being deleted to the DLQ (the SQS replacement for the
-//! AMQP `x-delivery-limit: 3`). Runs against LocalStack with a 1 s visibility
+//! three times without being deleted to the DLQ (the SQS delivery limit). Runs against LocalStack with a 1 s visibility
 //! timeout so the receives do not take minutes.
 //!
 //! Malformed-message handling (Q5, explicit DLQ send) is consumer behavior

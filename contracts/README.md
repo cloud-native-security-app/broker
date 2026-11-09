@@ -1,7 +1,7 @@
 # contracts/
 
 JSON Schema (draft 2020-12) del contrato de mensajes del Broker, más esta
-documentación de qué exchange/routing-key transporta cada mensaje y quién
+documentación de qué tópico SNS/routing key transporta cada mensaje y quién
 publica/consume. El contrato **se copia literalmente** de lo que `ms-nmap`
 ya implementa y testea (`src/domain.rs`, `src/messaging/publisher.rs`), no
 se re-deriva desde cero — ver
@@ -18,10 +18,10 @@ verificación contra el repo hermano `nmap-service`.
 
 ## `ScanRequest`
 
-- **Exchange:** `scan.requests` (topic).
-- **Routing key:** `scan.request`.
+- **Tópico SNS:** `scan-requests`.
+- **`routing_key` (atributo de mensaje):** `scan.request`.
 - **Publica:** Gateway.
-- **Consume:** `ms-nmap` (cola `ms-nmap.scan-requests`).
+- **Consume:** `ms-nmap` (cola SQS `ms-nmap-scan-requests`).
 - **Fuente:** `nmap-service/src/domain.rs` líneas 133–156 (struct `ScanRequest`),
   contrastado en `docs/decisions.md` (D-08).
 
@@ -47,20 +47,19 @@ implementación conforme al draft).
 
 ## `ScanOutcome`
 
-- **Exchange:** `scan.outcomes` (topic), internamente tageado por `status`.
-- **Routing keys:** `scan.outcome.started`, `scan.outcome.completed`,
+- **Tópico SNS:** `scan-outcomes`, internamente tageado por `status`.
+- **`routing_key` (atributo de mensaje):** `scan.outcome.started`, `scan.outcome.completed`,
   `scan.outcome.failed`.
 - **Publica:** `ms-nmap`.
-- **Consume, con bindings DIFERENCIADOS** (ver `rabbitmq/definitions.json`,
-  feature `topology_definition`):
-  - `ms-analisis` (cola `ms-analisis.scan-outcomes`) — bindings SOLO a
-    `scan.outcome.completed` y `scan.outcome.failed`. `ms-analisis` nunca
-    recibe `started`: no le interesa el estado intermedio "en progreso", solo
-    desenlaces finales.
-  - Gateway (cola `gateway.scan-outcomes`) — binding a `scan.outcome.#`
-    (las tres variantes), para reflejar
+- **Consume, con suscripciones DIFERENCIADAS** (topología en
+  `src/topology.rs`, implementada en `infra`):
+  - Gateway (cola `gateway-scan-outcomes`) — `FilterPolicy` con prefijo
+    `scan.outcome.` (las tres variantes), para reflejar
     PENDIENTE/EN_PROGRESO/COMPLETADO/FALLIDO en el frontend en tiempo real
     (RF-07/RF-08).
+  - `ms-analisis` (cola `ms-analisis-scan-outcomes`) — **diferida**: no se crea
+    hasta que exista el servicio (decisión Q7); filtrará
+    `scan.outcome.completed` y `scan.outcome.failed`, nunca `started`.
 - **Fuente `completed`/`failed`:** `nmap-service/src/messaging/publisher.rs`
   líneas 62–91 (enum `ScanOutcome`, `#[serde(tag = "status", rename_all =
   "snake_case")]`), contrastado en `docs/decisions.md` (D-08).
@@ -76,7 +75,7 @@ para RF-07/RF-08 (que el Gateway pueda reflejar el estado EN_PROGRESO), pero
 de `nmap-service/src/messaging/publisher.rs` solo tiene las variantes
 `Completed`/`Failed` a día de hoy (confirmado en
 `docs/decisions.md`, D-08). Este repo define el
-canal (exchange, routing key, binding en `gateway.scan-outcomes`) y el
+canal (tópico, `routing_key`, suscripción de `gateway-scan-outcomes`) y el
 schema para que `ms-nmap` pueda implementarla sin renegociar el contrato,
 pero **no afirma que `ms-nmap` la publique ya**. Implementarla y publicarla
 es trabajo pendiente en el repo `nmap-service`, fuera de alcance de este
@@ -108,14 +107,12 @@ discutir explícitamente, no una corrección silenciosa de este README.
 
 ## `ScanCancellation`
 
-- **Exchange:** `scan.cancellations` (topic), con su dead-letter
-  `scan.cancellations.dlx` (`direct`).
-- **Routing key:** `scan.cancellation`.
+- **Tópico SNS:** `scan-cancellations`.
+- **`routing_key` (atributo de mensaje):** `scan.cancellation`.
 - **Publica:** Gateway.
-- **Consume:** `ms-nmap` (cola `ms-nmap.scan-cancellations`, con su propia
-  `ms-nmap.scan-cancellations.dlq` y el mismo patrón de reintentos acotados
-  —`x-delivery-limit: 3`, N ya justificado en `rabbitmq/README.md`— que las
-  colas de la feature `topology_definition`).
+- **Consume:** `ms-nmap` (cola `ms-nmap-scan-cancellations`, con su propia
+  `ms-nmap-scan-cancellations-dlq` y reintentos acotados con
+  `maxReceiveCount=3`).
 - **Campos:** `correlation_id` (el del escaneo/`ScanRequest` a cancelar,
   mismo shape que en `ScanRequest`) y `requested_by`, ambos `required`,
   `additionalProperties: false`. Deliberadamente mínimo: **nunca** lleva una
@@ -129,17 +126,25 @@ discutir explícitamente, no una corrección silenciosa de este README.
 
 ### Consumo y cancelación real — trabajo PENDIENTE en `nmap-service`
 
-Este repo define el canal (exchange, routing key, cola, permisos) y el
-schema, y el usuario `gateway` ya puede publicar en él. Pero **`ms-nmap` no
+Este repo define el canal (tópico, `routing_key`, cola) y el
+schema. Pero **`ms-nmap` no
 consume ni honra todavía este mensaje**: a día de hoy
 `nmap-service/src/messaging/consumer.rs` solo implementa
 `ScanRequestSource`/`parse_scan_request` para `ScanRequest` — no existe
-ningún tipo, trait ni lógica para leer `ms-nmap.scan-cancellations` ni para
+ningún tipo, trait ni lógica para leer `ms-nmap-scan-cancellations` ni para
 abortar un pipeline de escaneo en ejecución (confirmado leyendo ese archivo
 en el repo `nmap-service`, de solo lectura desde aquí). Implementar el
 consumo y, sobre todo, abortar realmente el escaneo activo (RF-14) es
 trabajo pendiente en `nmap-service`, fuera de alcance de este repo — igual
 que la variante `started` de `ScanOutcome` (ver arriba).
+
+## Entrega por SNS/SQS
+
+Con `RawMessageDelivery=true` el cuerpo SQS es exactamente el JSON de estos
+schemas (sin envoltorio SNS) y la routing key llega como atributo de mensaje
+`routing_key`. `tests/sns_sqs_contract.rs` lo comprueba contra LocalStack. La
+entrega es at-least-once: los consumidores deben ser idempotentes por
+`correlation_id`.
 
 ## Sin `schema_version` (nota de versionado)
 
@@ -157,7 +162,7 @@ versionado antes de tocar estos schemas.
 ## Ejemplos de referencia
 
 Los ejemplos usados en los tests de este repo
-(`src/contracts.rs`, `tests/message_contract.rs`) son literalmente los
+(`src/contracts.rs`, `tests/sns_sqs_contract.rs`) son literalmente los
 citados en `docs/decisions.md` (D-08) (extraídos de los propios
 tests de `ms-nmap`) para `completed`/`failed`, y el shape acordado en
 el plan del repo para `started`. Ningún ejemplo usa una credencial SSH
