@@ -49,16 +49,17 @@ Out: Kinesis publishing or consuming (KAP-06..09), Terraform stream (KAP-01), an
 
 | ID | Task | Done |
 |---|---|---|
-| SEC-01 | Feature document | [ ] |
-| SEC-02 | RED: failing tests for `validate_security_event` (valid per type, rejections) | [ ] |
-| SEC-03 | GREEN: schema + validator + examples | [ ] |
-| SEC-04 | Docs: `contracts/README.md`, D-14, architecture list | [ ] |
-| SEC-05 | `make verify` green | [ ] |
+| SEC-01 | Feature document | [x] 7538ae0 |
+| SEC-02 | RED: failing tests for `validate_security_event` (valid per type, rejections) | [x] RED observed: `cargo test --lib` failed to compile (E0425, `validate_security_event` not found, 19 errors) |
+| SEC-03 | GREEN: schema + validator + examples | [x] GREEN: `cargo test --lib` 33 passed; commit b7c4f9d |
+| SEC-04 | Docs: `contracts/README.md`, D-14, architecture list | [x] docs commit (see Progress) |
+| SEC-05 | `make verify` green | [x] exit 0 (fmt, clippy -D warnings, 33 unit tests, LocalStack integration, doc) |
 
 ## Progress
 
-(filled as tasks close)
+- 2026-11-09: SEC-01 feature doc (7538ae0). SEC-02/03 tests first (RED, compile error), then schema, validator and 11 examples (b7c4f9d, GREEN). SEC-04 docs commit. Commit review (gga) passed on each commit; its only note is a pre-existing `panic!` in `compile()`, out of scope.
+- Review: native assessment declined per stored user policy (no permissions or secrets task).
 
 ## Next step
 
-SEC-02.
+Push and PR of `feature/security_event_contract` are the user decision. Then KAP-06/07/08 can use `contracts/examples/security-event/`.

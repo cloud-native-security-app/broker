@@ -159,3 +159,23 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
   Cifrado SSE-SQS (sin KMS) y retención de 1 h en requests y 24 h en su DLQ.
   `tests/topology_parity.rs` evita que `src/topology.rs`, `messaging.tf` y
   `localstack-init.sh` diverjan.
+
+## D-14 Kinesis transporta hechos de dominio; SNS + SQS conserva los comandos
+
+- **Decisión:** el stream Kinesis `security-events` transporta hechos de dominio
+  inmutables (escaneo solicitado/iniciado/completado, hallazgo crítico, login,
+  rate limit, mensaje en DLQ, auditoría), definidos en
+  `contracts/security-event.schema.json`. SNS + SQS sigue siendo el canal de
+  comandos (solicitud y cancelación de escaneo, D-13). Kafka/MSK sigue
+  descartado.
+- **Contexto:** el panel de administración necesita un registro ordenado y
+  reproducible que varios consumidores lean sin acoplar a los productores; un
+  comando espera una acción de un único consumidor, un hecho solo informa.
+  Kafka/MSK sigue descartado: añade un clúster que operar sin aportar nada que
+  un stream de 1 shard y 24 h no cubra para este alcance.
+- **Consecuencia:** entrega at-least-once, así que los consumidores deduplican
+  por `event_id`. Clave de partición: `scan_id`, si no `actor_sub`. El schema no
+  admite credenciales, tokens, salida cruda ni cuerpos de mensajes. Un fallo de
+  Kinesis se registra y nunca falla la operación de negocio. No se agrega
+  `schema_version` (ver `docs/architecture.md`).
+

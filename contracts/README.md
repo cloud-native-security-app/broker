@@ -15,6 +15,7 @@ verificación contra el repo hermano `nmap-service`.
 | [`scan-request.schema.json`](./scan-request.schema.json) | `ScanRequest` | Implementado y publicado en `ms-nmap` |
 | [`scan-outcome.schema.json`](./scan-outcome.schema.json) | `ScanOutcome` (`started`/`completed`/`failed`) | `completed`/`failed` implementados; `started` **PENDIENTE** (ver abajo) |
 | [`scan-cancellation.schema.json`](./scan-cancellation.schema.json) | `ScanCancellation` | Canal y schema definidos aquí; consumo/honra en `ms-nmap` **PENDIENTE** (ver abajo) |
+| [`security-event.schema.json`](./security-event.schema.json) | `SecurityEvent` (11 `event_type`) | Definido aquí (D-14); los productores lo implementan en KAP-06/07/08 |
 
 ## `ScanRequest`
 
@@ -170,3 +171,41 @@ real: el `ssh_credentials_ref` de los payloads de ejemplo es siempre un
 valor de laboratorio explícitamente ficticio (p. ej.
 `"lab-only-not-a-real-secret"`), nunca el que aparece en el test real de
 `ms-nmap` (que si es real, ver nota de seguridad arriba).
+
+## `SecurityEvent`
+
+- **Transporte:** Kinesis Data Stream `security-events` (1 shard, retención 24 h).
+  No usa SNS/SQS: ver D-14.
+- **Publican:** Gateway, `nmap-service`, `user-service`. **Consume:** Gateway
+  (panel de administración).
+- **Clave de partición** (solo documentada, el schema no la impone): `scan_id`,
+  y si no existe, `actor_sub`.
+- **Entrega at-least-once:** los consumidores deduplican por `event_id`.
+- Sobre: `event_id` (UUID), `event_type`, `occurred_at` (RFC 3339), `source`
+  (`gateway`/`nmap-service`/`user-service`), `actor_sub?`, `scan_id?`
+  (string libre, igual que `correlation_id`), `payload`. Sin `schema_version`
+  (ver `docs/architecture.md`).
+- `scan_id` es obligatorio en `scan.*` y `finding.*`; `actor_sub` lo es en
+  `auth.*`, `ratelimit.*` y `audit.recorded`.
+
+| `event_type` | Productor | `payload` |
+|---|---|---|
+| `scan.requested` | gateway | `target` (IP) |
+| `scan.cancelled` | gateway | `target?` |
+| `scan.started` | nmap-service | vacío |
+| `scan.completed` | nmap-service | `duration_ms`, `finding_counts` (`critical`/`high`/`medium`/`low`/`info`/`unknown`) |
+| `scan.failed` | nmap-service | `reason_code` |
+| `finding.critical` | nmap-service | `port`, `protocol`, `cve_id` (nullable), `severity` (`high`/`critical`), `confidence` (`confirmed`/`version_match`) |
+| `auth.login`, `auth.logout` | gateway | vacío |
+| `ratelimit.hit` | gateway | `route`, `limit`, `window_seconds` |
+| `message.deadlettered` | gateway | `queue`, `reason_code` (nunca el cuerpo) |
+| `audit.recorded` | user-service | `action`, `resource_type` |
+
+**Privacidad:** todos los objetos son `additionalProperties: false`; no hay
+campos de texto libre (los motivos son códigos `snake_case`, la ruta no admite
+query string). Así no pasan credenciales, tokens, salida cruda de nmap ni
+cuerpos de mensajes.
+
+**Ejemplos:** [`examples/security-event/`](./examples/security-event/) trae un
+JSON válido por tipo; `src/contracts.rs` los valida y los productores pueden
+reutilizarlos en sus tests.
