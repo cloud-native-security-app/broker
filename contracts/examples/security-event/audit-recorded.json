@@ -1,0 +1,11 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a0b",
+  "event_type": "audit.recorded",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "user-service",
+  "actor_sub": "user-sub-123",
+  "payload": {
+    "action": "user.updated",
+    "resource_type": "user"
+  }
+}

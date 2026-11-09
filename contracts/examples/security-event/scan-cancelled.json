@@ -1,0 +1,9 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a02",
+  "event_type": "scan.cancelled",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "gateway",
+  "actor_sub": "user-sub-123",
+  "scan_id": "corr-42",
+  "payload": {}
+}

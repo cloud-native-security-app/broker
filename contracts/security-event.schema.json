@@ -1,0 +1,541 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://security-app.example.test/broker/contracts/security-event.schema.json",
+  "title": "SecurityEvent",
+  "description": "Immutable domain fact published to the Kinesis Data Stream security-events by gateway, nmap-service and user-service, and read by the gateway admin panel. Partition key (documented, not enforced here): scan_id, else actor_sub. Events never carry credentials, tokens, raw scan output or message bodies: every object is closed (additionalProperties false) and reasons are short codes, never free text. No schema_version on purpose (docs/architecture.md).",
+  "$defs": {
+    "emptyPayload": {
+      "type": "object",
+      "maxProperties": 0,
+      "additionalProperties": false,
+      "description": "No payload fields: the envelope carries everything."
+    },
+    "scanRequestedPayload": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "anyOf": [
+            {
+              "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+            },
+            {
+              "pattern": "^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$"
+            }
+          ],
+          "description": "IPv4 or IPv6 target, same patterns as scan-request.schema.json#/properties/ip."
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "scanCancelledPayload": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "anyOf": [
+            {
+              "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+            },
+            {
+              "pattern": "^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$"
+            }
+          ],
+          "description": "IPv4 or IPv6 target, same patterns as scan-request.schema.json#/properties/ip."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "scanCompletedPayload": {
+      "type": "object",
+      "properties": {
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "finding_counts": {
+          "type": "object",
+          "properties": {
+            "critical": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "high": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "medium": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "low": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "info": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unknown": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "info",
+            "unknown"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "duration_ms",
+        "finding_counts"
+      ],
+      "additionalProperties": false
+    },
+    "scanFailedPayload": {
+      "type": "object",
+      "properties": {
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "description": "Short machine code (e.g. ssh_timeout). Never free text or tool output."
+        }
+      },
+      "required": [
+        "reason_code"
+      ],
+      "additionalProperties": false
+    },
+    "findingCriticalPayload": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "protocol": {
+          "enum": [
+            "tcp",
+            "udp"
+          ]
+        },
+        "cve_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$",
+          "description": "CVE identifier, or null when the finding has none."
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "critical"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "confirmed",
+            "version_match"
+          ]
+        }
+      },
+      "required": [
+        "port",
+        "protocol",
+        "cve_id",
+        "severity",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "ratelimitHitPayload": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "type": "string",
+          "pattern": "^/[^?#\\s]{0,199}$",
+          "description": "Route path or template; no query string or fragment."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "window_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "route",
+        "limit",
+        "window_seconds"
+      ],
+      "additionalProperties": false
+    },
+    "messageDeadletteredPayload": {
+      "type": "object",
+      "properties": {
+        "queue": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        }
+      },
+      "required": [
+        "queue",
+        "reason_code"
+      ],
+      "additionalProperties": false
+    },
+    "auditRecordedPayload": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+        },
+        "resource_type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]{0,63}$"
+        }
+      },
+      "required": [
+        "action",
+        "resource_type"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "UUID, unique per event; consumers dedupe on it (Kinesis is at-least-once)."
+    },
+    "event_type": {
+      "enum": [
+        "scan.requested",
+        "scan.cancelled",
+        "scan.started",
+        "scan.completed",
+        "scan.failed",
+        "finding.critical",
+        "auth.login",
+        "auth.logout",
+        "ratelimit.hit",
+        "message.deadlettered",
+        "audit.recorded"
+      ]
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC 3339 with offset. The pattern is there because format is only an annotation in draft 2020-12."
+    },
+    "source": {
+      "enum": [
+        "gateway",
+        "nmap-service",
+        "user-service"
+      ]
+    },
+    "actor_sub": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "JWT sub of the user who caused the event."
+    },
+    "scan_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Scan identifier, same free-string shape as correlation_id in the scan contracts."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Shape depends on event_type (see allOf)."
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "source",
+    "payload"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "scan.requested"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/scanRequestedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "scan.cancelled"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/scanCancelledPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "scan.started"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/emptyPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "scan.completed"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/scanCompletedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "scan.failed"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/scanFailedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "finding.critical"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/findingCriticalPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "auth.login"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/emptyPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "auth.logout"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/emptyPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "ratelimit.hit"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ratelimitHitPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "message.deadlettered"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/messageDeadletteredPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "audit.recorded"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/auditRecordedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "scan.requested",
+              "scan.cancelled",
+              "scan.started",
+              "scan.completed",
+              "scan.failed",
+              "finding.critical"
+            ]
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "scan_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "auth.login",
+              "auth.logout",
+              "ratelimit.hit",
+              "audit.recorded"
+            ]
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "required": [
+          "actor_sub"
+        ]
+      }
+    }
+  ]
+}
