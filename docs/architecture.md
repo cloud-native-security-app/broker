@@ -5,8 +5,8 @@
 
 ## Alcance de este repo
 
-Este repo implementa **únicamente la infraestructura y el contrato de
-mensajes del Broker** de la plataforma. `ms-usuarios`, `ms-nmap` (ya
+Este repo implementa **únicamente el contrato de mensajes y la topología
+esperada (SNS + SQS) de la mensajería** de la plataforma. `ms-usuarios`, `ms-nmap` (ya
 implementado, otro repo), `ms-analisis` y el Gateway son otros
 servicios/otros repos — no se implementan aquí, y este repo **no** conoce su
 lógica de negocio.
@@ -19,8 +19,8 @@ Gateway ──(ScanRequest)──────────▶  Broker  ──▶ 
    ▲                                                │
    │                                                │ (ScanOutcome: started/completed/failed)
    │                                                ▼
-   └──────────────(gateway.scan-outcomes)───────  Broker  ──(ms-analisis.scan-outcomes:
-                                                      │       solo completed/failed)──▶ ms-analisis
+   └──────────────(gateway-scan-outcomes)───────  Broker  ──(ms-analisis-scan-outcomes,
+                                                              diferida: solo completed/failed)──▶ ms-analisis
 Gateway ──(ScanCancellation)─────▶  Broker  ──▶  ms-nmap
 ```
 
@@ -34,7 +34,7 @@ Ampliación 2026-09-14 (ronda 2, tras leer `documento_requerimientos.docx` y
 `ScanRequest`/`ScanOutcome` en un sentido. Los requisitos oficiales del
 proyecto exigen además:
 - **RF-08** (notificación en tiempo real al frontend) → el Gateway también
-  **consume** desenlaces (cola `gateway.scan-outcomes`), no solo los publica
+  **consume** desenlaces (cola `gateway-scan-outcomes`), no solo los publica
   el lado de `ms-nmap` hacia `ms-analisis`.
 - **RF-07** (estado PENDIENTE/EN_PROGRESO/COMPLETADO/FALLIDO) → `ScanOutcome`
   gana una tercera variante `started`, que solo le interesa al Gateway (para
@@ -49,77 +49,52 @@ define el canal y el contrato.
 
 ## Decisiones de diseño ya tomadas
 
-- **Tecnología: RabbitMQ.** Decisión del usuario (2026-09-14), reemplaza
-  cualquier mención anterior de SQS/NATS/Kafka en diagramas viejos del
-  proyecto.
-- **Alcance: solo infraestructura + contrato, sin librería compartida.**
-  Este repo define y verifica la topología de RabbitMQ (`rabbitmq/`) y el
-  formato de los mensajes (`contracts/`). **No publica ningún crate Rust
-  para que otros servicios lo importen.** Cada servicio implementa su
-  propio cliente RabbitMQ (p. ej. con `lapin`) contra el contrato
-  documentado aquí. Si en el futuro se decide construir un cliente
-  compartido, es una feature nueva a discutir explícitamente — no se asume.
-- **`docker-compose.yml` es el entorno de referencia local**, no un
-  despliegue de producción. Usa una imagen `rabbitmq:<tag>-management`
-  pineada por tag (y por digest cuando sea posible) para tener la UI de
-  gestión disponible en desarrollo.
-- **La topología se declara de forma imperativa** en
-  `rabbitmq/definitions.json` (el formato que RabbitMQ carga vía
-  `management.load_definitions` o al arrancar con
-  `RABBITMQ_LOAD_DEFINITIONS`) — no se crea a mano ni por scripts
-  imperativos sueltos, para que quede versionada y sea reproducible.
-- **Usuarios de mínimo privilegio, uno por servicio productor/consumidor**
-  (`gateway`, `ms-nmap`, `ms-analisis`), cada uno con permisos (`configure`/
-  `write`/`read`) acotados por regex a los exchanges/colas que le
-  corresponden. Ningún servicio tiene permisos sobre la infraestructura de
-  otro.
-- **TLS (AMQPS) obligatorio.** El `ScanRequest` que atraviesa este Broker
-  lleva una credencial SSH real en `ssh_credentials_ref` (así está
-  implementado en `ms-nmap`) — ver `docs/security-scope.md`. AMQP en claro
-  no es una opción de producción; en el `docker-compose.yml` local se
-  documenta explícitamente si se deja disponible solo para depuración.
+- **Tecnología: AWS SNS + SQS** (decisión del usuario, 2026-10-17; reemplaza a
+  RabbitMQ y a Amazon MQ, denegado en el Learner Lab). Ver `docs/decisions.md`
+  D-13 y el diseño firmado en `odd/tasks/sqs-sns-migration.md`.
+- **Alcance: solo contrato + topología esperada, sin librería compartida.**
+  Este repo define el formato de los mensajes (`contracts/`) y la topología
+  (`src/topology.rs`); `infra` la implementa. **No publica ningún crate para
+  que otros servicios lo importen.** Cada servicio implementa su propio cliente.
+- **Topología: tópico por flujo, cola por consumidor.** `scan-requests`,
+  `scan-cancellations` y `scan-outcomes`; colas `ms-nmap-scan-requests`,
+  `ms-nmap-scan-cancellations` y `gateway-scan-outcomes`, cada una con su
+  `-dlq`. La routing key viaja como atributo de mensaje `routing_key`; las
+  suscripciones usan `RawMessageDelivery=true` y, para el Gateway, una
+  `FilterPolicy` por prefijo `scan.outcome.`.
+- **Reintentos acotados (RNF-06):** `RedrivePolicy.maxReceiveCount=3` hacia la
+  DLQ. Un mensaje malformado se envía explícitamente a la DLQ (decisión Q5,
+  responsabilidad del consumidor).
+- **Semántica at-least-once, colas estándar.** Los consumidores deben ser
+  idempotentes por `correlation_id`; no hay orden garantizado (decisión Q3).
+- **Sensibilidad:** el `ScanRequest` lleva una credencial SSH real
+  (`ssh_credentials_ref`; ver `docs/security-scope.md`). SSE-SQS en todas las
+  colas, retención de 1 h en la cola de requests y 24 h en su DLQ, HTTPS-only
+  por política.
 - **El contrato de mensajes se copia literal desde `ms-nmap`, no se
-  re-deriva.** `ms-nmap` ya implementa y testea la forma exacta de
-  `ScanRequest` y `ScanOutcome` (ver "Contrato de mensajes" abajo); este
-  repo es la fuente de verdad documentada de ese contrato para el resto de
-  la plataforma, pero el JSON Schema debe coincidir byte a byte con lo que
-  `ms-nmap` ya serializa/deserializa.
-- **Verificación con `testcontainers` + `lapin`**, igual rigor que
-  `ms-nmap`: un crate Rust cuyo único propósito es probar que la topología,
-  los permisos y el contrato son correctos contra un `rabbitmq:management`
-  real — **nunca** contra un broker de producción, **nunca** con mocks.
-  Este crate **no** produce un binario de producción ni una imagen Docker
-  de servicio: es solo arnés de verificación.
-- **Reintentos limitados antes de dead-letter (RNF-06 y el plan de
-  pruebas del proyecto).** Un mensaje que falla su procesamiento se
-  reintenta un número acotado de veces (no una vez con TTL directo a DLQ)
-  antes de caer en su cola de mensajes fallidos — ver la feature
-  `topology_definition`.
-- **Observabilidad del Broker es un requisito explícito (RNF-09, RNF-10),
-  no un nice-to-have.** Health checks del nodo y métricas de cola
-  (mensajes pendientes, consumidores activos, mensajes en DLQ) deben ser
-  consultables vía la API de management — ver la feature `observability`
-  y su documentación detallada (endpoints exactos, las 8 colas cubiertas,
-  y la decisión sobre el plugin `rabbitmq_prometheus`) en
-  `rabbitmq/README.md` §"Observabilidad".
+  re-deriva.** El JSON Schema debe coincidir con lo que `ms-nmap` ya
+  serializa/deserializa.
+- **Verificación con `testcontainers` + LocalStack**, sin mocks ni cuentas AWS:
+  un crate Rust cuyo único propósito es probar contrato, enrutamiento, DLQ y
+  atributos, más una comprobación offline de paridad con `infra`. No produce
+  un binario de producción ni una imagen Docker de servicio.
+- **Observabilidad:** las métricas de colas (mensajes pendientes, mensajes en
+  DLQ; RNF-09/RNF-10) pasan a ser métricas de CloudWatch de SQS, a cargo de
+  `infra`; este repo ya no tiene una API de management que consultar.
 
 ## Capas / directorios
 
-1. **`docker-compose.yml`** (raíz) — RabbitMQ local (`management` +
-   AMQPS), con `rabbitmq/definitions.json` cargado al arrancar. Entorno de
-   referencia para desarrollo y para los tests de integración.
-2. **`rabbitmq/`** — `definitions.json`: vhost, exchanges, colas, bindings,
-   colas de mensajes muertos (dead-letter), usuarios y sus permisos. Es la
-   fuente de verdad de la topología real.
-3. **`contracts/`** — JSON Schema de cada tipo de mensaje (`ScanRequest`,
+1. **`contracts/`** — JSON Schema de cada tipo de mensaje (`ScanRequest`,
    `ScanOutcome`, `ScanCancellation`) + documentación (`contracts/README.md`)
-   de qué exchange/routing-key transporta cada uno y quién publica/consume.
-4. **`src/`, `tests/`** — crate Rust de verificación. `tests/` prueba la
-   topología y los permisos contra un contenedor real
-   (`#[ignore = "requiere Docker"]`, igual convención que `ms-nmap`);
-   `src/` solo contiene helpers puros que necesiten esos tests (p. ej.
-   validación de un payload contra un JSON Schema) — sin lógica de negocio,
-   sin cliente de producción.
+   de qué tópico/routing key transporta cada uno y quién publica/consume.
+2. **`src/`** — helpers puros: `contracts.rs` (validación de payloads) y
+   `topology.rs` (topología esperada). Sin lógica de negocio, sin cliente de
+   producción.
+3. **`tests/`** — verificación: LocalStack para contrato, enrutamiento, DLQ y
+   atributos (`#[ignore = "requiere Docker"]`); `topology_parity.rs` offline
+   contra `../infra`.
+4. **`odd/tasks/`** — feature docs (migración a SNS/SQS; `amazon-mq-migration`
+   queda como historial).
 
 No introducir capas adicionales hasta que haya una razón concreta
 documentada en `docs/decisions.md`.
@@ -134,7 +109,7 @@ variante `started` de `ScanOutcome` y `ScanCancellation` son contrato
 **acordado pero pendiente de implementar en `ms-nmap`** — este repo define
 el canal y el schema, no la publicación/consumo real.
 
-**`ScanRequest`** (exchange `scan.requests`, routing key `scan.request` —
+**`ScanRequest`** (tópico `scan-requests`, `routing_key` `scan.request` —
 Gateway publica, `ms-nmap` consume):
 ```json
 {
@@ -152,7 +127,7 @@ opaca — ver `docs/security-scope.md`.
 **`ScanOutcome`** (exchange `scan.outcomes`, internamente tageado por
 `status`) — `ms-nmap` publica; `ms-analisis` consume solo `completed`/
 `failed` (routing keys `scan.outcome.completed`/`scan.outcome.failed`);
-el Gateway consume las tres (`scan.outcome.#`, cola `gateway.scan-outcomes`,
+el Gateway consume las tres (`scan.outcome.#`, cola `gateway-scan-outcomes`,
 para reflejar PENDIENTE/EN_PROGRESO/COMPLETADO/FALLIDO en el frontend, RF-07/RF-08):
 ```json
 {"status": "started", "correlation_id": "..."}
@@ -163,10 +138,9 @@ para reflejar PENDIENTE/EN_PROGRESO/COMPLETADO/FALLIDO en el frontend, RF-07/RF-
 ```json
 {"status": "failed", "correlation_id": "...", "reason": "..."}
 ```
-`started` es la única variante que `ms-nmap` **todavía no publica** — ver
-la nota de "trabajo pendiente" arriba.
+`started` ya lo publica `ms-nmap` (verificado en el diseño, Q8).
 
-**`ScanCancellation`** (exchange `scan.cancellations`, routing key
+**`ScanCancellation`** (tópico `scan-cancellations`, `routing_key`
 `scan.cancellation` — Gateway publica, `ms-nmap` consume; consumir y
 honrar la cancelación es trabajo pendiente en `ms-nmap`, RF-14):
 ```json
@@ -182,74 +156,14 @@ honrar la cancelación es trabajo pendiente en `ms-nmap`, RF-14):
   un mock — se documenta el bloqueo (p. ej. Docker no disponible) en
   el feature doc de `odd/tasks/`.
 
-## Despliegue (feature `deployment_docs`)
+## Despliegue
 
-> Detalle práctico (las 3 vías de carga, la tabla de variables, referencias
-> exactas) vive en `README.md` §"Despliegue" — esta sección explica el
-> *por qué* de cada decisión, análogo a la sección "Despliegue" de
-> `docs/architecture.md` en `ms-nmap`, no la duplica.
-
-Este repo no empaqueta ningún binario ni imagen de servicio (ver "Capas /
-directorios" arriba): el crate Rust es solo arnés de verificación, sin
-`src/main.rs`. Lo único "desplegable" que produce este repo es
-declarativo: `rabbitmq/definitions.json` — el mismo archivo que
-`docker-compose.yml` carga en local es el que se aplica, sin reescribirlo,
-a una instancia real.
-
-### Por qué no se asume un proveedor cloud
-
-La feature `deployment_docs` exige explícitamente no asumir un proveedor
-si no se ha decidido — mismo principio que "Decisiones de diseño ya
-tomadas" arriba: no se inventa infraestructura sin que el usuario la
-pida. Nombrar aquí un servicio gestionado concreto (AWS MQ, GCP, Azure
-Service Bus, etc.) congelaría una decisión de arquitectura que no le
-corresponde tomar a este repo por su cuenta. Si en el futuro se decide un
-proveedor, se documenta como actualización de `README.md` §"Despliegue",
-no como una feature nueva que intente adivinar la decisión.
-
-### Por qué el `docker-compose.yml` local no es el despliegue real
-
-`docker-compose.yml` es, desde `scaffolding`, el entorno de referencia
-para desarrollo y tests, nunca un despliegue de producción. Los 4 puntos
-que cambian para producción (certificados TLS reales, contraseñas de
-servicio fuera del repo, UI de management no pública, monitoreo
-conectado a un sistema de alertas real) ya están detallados con su propia
-justificación en `rabbitmq/README.md` (secciones "TLS (AMQPS)",
-"Credenciales de laboratorio" y "Observabilidad") y resumidos en
-`README.md` §"Despliegue" — no se repiten aquí byte a byte. Ninguno de
-los 4 es opcional: los tres primeros mitigan directamente la fuga de la
-credencial SSH real que transporta `ScanRequest` (ver
-`docs/security-scope.md`); el cuarto (monitoreo → alertas) es lo que
-convierte RNF-09/RNF-10 (ya cubiertos por la API de management, feature
-`observability`) en observabilidad *operativa* de verdad — sin un sistema
-de alertas consumiendo esos endpoints, que respondan bien no avisa a
-nadie si el nodo cae o una `.dlq` empieza a crecer.
-
-### Por qué cada servicio se documenta con distinto nivel de certeza
-
-`ms-nmap` ya tiene, en su propio repo, dos variables de entorno reales
-para el Broker (`MS_NMAP_BROKER_ENDPOINT`, `MS_NMAP_BROKER_CREDENTIAL`,
-confirmadas en `nmap-service/README.md`) — este repo solo documenta qué
-debería contener cada una una vez que RabbitMQ es la tecnología decidida
-(la URI AMQPS y la contraseña del usuario `ms-nmap`), sin inventar
-variables nuevas que `ms-nmap` no exponga ya. `gateway` y `ms-analisis` no
-tienen, desde aquí, ningún repo visible con variables reales confirmadas,
-así que se documentan en términos genéricos (host, vhost, usuario ya
-definido en `rabbitmq/definitions.json`, credencial fuera del repo) en vez
-de inventar nombres de variable de entorno concretos que no se puedan
-verificar contra código real.
-
-### Trabajo futuro potencial (detectado aquí, NO implementado)
-
-- Un test de integración que ejercite explícitamente
-  `rabbitmqctl import_definitions` como mecanismo de carga (los tests
-  actuales de `topology_definition` verifican la topología resultante,
-  pero vía montaje de archivo + arranque del nodo, no vía el comando
-  `import_definitions` en un nodo ya corriendo) — quedaría como una
-  feature nueva a decidir explícitamente con el usuario, no se agrega al
-  plan actual.
-- Reemplazar el placeholder genérico del proveedor cloud por el mecanismo
-  real una vez se decida una plataforma de despliegue concreta.
+Este repo no empaqueta ningún binario ni imagen de servicio. La topología se
+despliega desde `infra` (`terraform/messaging.tf`; init local en
+`scripts/localstack-init.sh`) y `tests/topology_parity.rs` evita que
+`src/topology.rs` y esos archivos diverjan. No se asume ni se documenta aquí
+nada específico de cada servicio más allá de que reciben ARN de tópico y URL de
+cola por variables de entorno definidas en `infra`.
 
 ## Qué NO hacer
 
@@ -258,7 +172,6 @@ verificar contra código real.
   diseño").
 - No versionar el esquema del contrato (`schema_version` u otro mecanismo)
   sin discutirlo antes — se deja como nota abierta hasta que haga falta.
-- No probar la topología contra una instancia de RabbitMQ real de
-  staging/producción.
-- No dejar AMQP en claro como opción por defecto en ningún ejemplo o
-  `docker-compose.yml`.
+- No probar contra una cuenta AWS real de staging/producción: solo
+  LocalStack.
+- No usar HTTP en claro salvo contra el LocalStack efímero de los tests.

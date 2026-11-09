@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://security-app.example.test/broker/contracts/scan-cancellation.schema.json",
   "title": "ScanCancellation",
-  "description": "Mensaje publicado por el Gateway en el exchange scan.cancellations (routing key scan.cancellation) para pedir la cancelación de un escaneo en curso (RF-14). ms-nmap consume el canal, pero honrar la cancelación (abortar el pipeline en ejecución) es trabajo PENDIENTE en el repo nmap-service — ver contracts/README.md. Nunca lleva una credencial: solo el identificador del escaneo a cancelar y quién la solicita.",
+  "description": "Mensaje publicado por el Gateway en el tópico SNS scan-cancellations (atributo routing_key scan.cancellation) para pedir la cancelación de un escaneo en curso (RF-14). ms-nmap consume el canal, pero honrar la cancelación (abortar el pipeline en ejecución) es trabajo PENDIENTE en el repo nmap-service — ver contracts/README.md. Nunca lleva una credencial: solo el identificador del escaneo a cancelar y quién la solicita.",
   "type": "object",
   "properties": {
     "correlation_id": {

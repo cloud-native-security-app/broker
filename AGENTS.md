@@ -5,54 +5,47 @@
 
 ## Contexto
 
-`broker` define la infraestructura de mensajería de la plataforma: la
-topología de RabbitMQ (`rabbitmq/definitions.json`), su configuración TLS
-(`rabbitmq/rabbitmq.conf`), los contratos de mensajes en JSON Schema
-(`contracts/`) y un crate Rust (`src/`, `tests/`) que verifica todo eso
-contra un RabbitMQ real. No tiene binario de producción. Por
-`scan.requests` viajan **credenciales SSH reales**
-(`ScanRequest.ssh_credentials_ref`); ver `docs/security-scope.md`.
+`broker` define el contrato de mensajería de la plataforma: los contratos de
+mensajes en JSON Schema (`contracts/`), la topología SNS + SQS esperada como
+datos puros (`src/topology.rs`) y un crate Rust (`src/`, `tests/`) que los
+verifica contra LocalStack. La topología se implementa en el repo `infra`
+(Terraform y init de LocalStack). No tiene binario de producción. Por
+`scan-requests` viajan **credenciales SSH reales**
+(`ScanRequest.ssh_credentials_ref`); ver `docs/security-scope.md`. RabbitMQ
+fue retirado (`docs/decisions.md`, D-13).
 
 ## Seguridad (bloqueante)
 
 - Nunca se commitean credenciales, certificados ni claves privadas reales.
-  Las contraseñas de `definitions.json`, los payloads de ejemplo y los
-  certificados de `rabbitmq/tls/` son de laboratorio y deben verse
-  ficticios a simple vista (p. ej. `lab-only-not-a-real-secret`).
-- Toda conexión a RabbitMQ usa AMQPS (TLS). Nunca se deshabilita ni se
-  relaja la verificación del certificado (ni en tests ni "temporalmente").
-  Un puerto AMQP en claro solo se acepta en el compose local, marcado como
-  solo-desarrollo.
-- Mínimo privilegio: un usuario por servicio (`gateway`, `ms-nmap`,
-  `ms-analisis`), con permisos `configure`/`write`/`read` acotados por
-  regex solo a sus exchanges/colas. Se rechaza cualquier regex amplia
-  (`.*`) o un usuario con acceso a la cola de otro servicio.
-- La contraseña del usuario administrador nunca se hardcodea fuera del
-  ámbito de laboratorio; en un entorno real sale de variable de entorno o
-  gestor de secretos.
-- Ningún test, script ni config loguea el cuerpo completo de un mensaje
-  que pueda contener `ssh_credentials_ref`.
-- Las colas no se configuran como almacenamiento de largo plazo (sin TTL
-  ni límites que retengan mensajes con credenciales indefinidamente).
+  Los payloads de ejemplo y las credenciales de LocalStack (`test`/`test`) son
+  de laboratorio y deben verse ficticios a simple vista (p. ej.
+  `lab-only-not-a-real-secret`).
+- El HTTP en claro solo se acepta contra el LocalStack efímero de los tests;
+  contra AWS real siempre HTTPS, y las políticas de cola/tópico niegan
+  `aws:SecureTransport=false` (comprobado por paridad con `infra`).
+- Ningún test, script ni config loguea el cuerpo completo de un mensaje que
+  pueda contener `ssh_credentials_ref` (en aserciones se compara con `assert!`
+  sin imprimir el cuerpo).
+- Retención acotada: la cola de requests conserva 1 h y su DLQ 24 h, con
+  SSE-SQS; nada que retenga mensajes con credenciales indefinidamente.
 
 ## Topología y contratos (bloqueante)
 
-- `rabbitmq/definitions.json` es la única fuente de verdad de nombres:
-  vhost, exchanges, colas, bindings, usuarios y permisos. Tests y docs que
-  citan un nombre deben coincidir exactamente con ese archivo.
-- Nombres según `docs/conventions.md`: exchanges `dominio.acción`
-  (`scan.requests`), DLX `<exchange>.dlx`, colas
-  `<servicio-consumidor>.<qué-consume>`, DLQ `<cola>.dlq`, routing keys
-  que describen el evento y no el destinatario.
-- Toda cola de trabajo tiene su dead-letter (`x-dead-letter-exchange`) y,
-  si aplica, `x-delivery-limit`, declarados en `arguments` o `policies`,
-  nunca implícitos en el código de los tests.
-- Un cambio en `contracts/*.schema.json` refleja literalmente la forma que
-  ya implementa el productor/consumidor (`ms-nmap` `domain.rs`). Un cambio
+- `src/topology.rs` es la única fuente de verdad de nombres y parámetros
+  (tópicos, colas, `-dlq`, visibilidad, retención, filtros,
+  `maxReceiveCount`). Tests y docs que citan un nombre deben coincidir
+  exactamente; `tests/topology_parity.rs` lo compara con `infra`.
+- Nombres según `docs/conventions.md`: tópicos `<dominio>-<plural>`, colas
+  `<servicio-consumidor>-<qué-consume>`, DLQ `<cola>-dlq`, `routing_key` como
+  atributo que describe el evento y no el destinatario.
+- Toda cola de trabajo tiene su DLQ y `RedrivePolicy.maxReceiveCount`
+  declarados en la topología, nunca implícitos en el código de los tests.
+- Un cambio en `contracts/*.schema.json` refleja literalmente la forma que ya
+  implementa el productor/consumidor (`ms-nmap` `domain.rs`). Un cambio
   incompatible del contrato es una decisión explícita, documentada en
   `contracts/README.md` y `docs/decisions.md`, no un ajuste silencioso.
-- No se crea un exchange nuevo solo porque un consumidor quiere un
-  subconjunto de eventos existentes: se usa otro binding con routing key.
+- No se crea un tópico nuevo solo porque un consumidor quiere un subconjunto
+  de eventos existentes: se usa otra suscripción con `FilterPolicy`.
 
 ## Corrección (bloqueante)
 
@@ -62,15 +55,15 @@ contra un RabbitMQ real. No tiene binario de producción. Por
 
 ## Tests
 
-- Todo cambio de topología, permisos, TLS o contrato trae su test en el
+- Todo cambio de topología, retención, cifrado o contrato trae su test en el
   mismo commit.
-- Los tests de integración corren contra `rabbitmq:management` real vía
-  `testcontainers`, marcados `#[ignore = "requiere Docker"]`; nunca mocks
-  de RabbitMQ ni instancias de staging/producción.
-- Los tests de permisos cubren el caso positivo (el servicio accede a lo
-  suyo) y el negativo (acceso denegado a lo ajeno).
+- Los tests de integración corren contra LocalStack real vía `testcontainers`,
+  marcados `#[ignore = "requiere Docker"]`; nunca mocks de SNS/SQS ni cuentas
+  AWS reales.
+- Los tests de enrutamiento cubren el caso positivo (llega a su cola) y el
+  negativo (no llega a las ajenas ni pasa el filtro).
 - Nombres descriptivos del comportamiento
-  (`ms_nmap_user_cannot_publish_to_ms_analisis_queue`).
+  (`gateway_receives_all_three_outcomes_and_the_filter_drops_other_routing_keys`).
 
 ## Estilo
 

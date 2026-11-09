@@ -3,48 +3,30 @@
 > Homogeneidad extrema. La IA predice mejor cuando el repositorio se parece
 > a sí mismo en todas partes.
 
-## Nombres en RabbitMQ
+## Nombres en SNS y SQS
+
+La mensajería es SNS + SQS (ver `docs/decisions.md` D-13). La fuente de verdad
+de nombres y parámetros es `src/topology.rs`; `infra` la implementa
+(`terraform/messaging.tf`, `scripts/localstack-init.sh`) y
+`tests/topology_parity.rs` comprueba que coinciden.
 
 | Elemento | Convención | Ejemplo |
 |----------|------------|---------|
-| Vhost | `kebab-case`, uno para toda la plataforma salvo razón concreta | `security-app` |
-| Exchange | `kebab-case`, tipo `topic` salvo razón concreta, singular del dominio + `.` + acción | `scan.requests`, `scan.outcomes`, `scan.cancellations` |
-| Exchange de dead-letter | mismo nombre + `.dlx` | `scan.requests.dlx` |
-| Cola | `<servicio-consumidor>.<qué-consume>` | `ms-nmap.scan-requests`, `ms-analisis.scan-outcomes`, `gateway.scan-outcomes`, `ms-nmap.scan-cancellations` |
-| Cola de dead-letter | mismo nombre + `.dlq` | `ms-nmap.scan-requests.dlq` |
-| Routing key | `kebab-case` con puntos, describe el evento, no el destinatario | `scan.request`, `scan.outcome.started`, `scan.outcome.completed`, `scan.outcome.failed`, `scan.cancellation` |
-| Usuario de RabbitMQ | igual al nombre del servicio | `gateway`, `ms-nmap`, `ms-analisis` |
+| Tópico SNS | `kebab-case`, `<dominio>-<plural>`, uno por flujo | `scan-requests`, `scan-cancellations`, `scan-outcomes` |
+| Cola SQS | `<servicio-consumidor>-<qué-consume>` (SQS no admite puntos en el nombre de forma segura) | `ms-nmap-scan-requests`, `ms-nmap-scan-cancellations`, `gateway-scan-outcomes` |
+| Cola de dead-letter | nombre de la cola + `-dlq` | `ms-nmap-scan-requests-dlq` |
+| Routing key | atributo de mensaje `String` llamado `routing_key`, `kebab-case` con puntos, describe el evento, no el destinatario | `scan.request`, `scan.outcome.started`, `scan.outcome.completed`, `scan.outcome.failed`, `scan.cancellation` |
 
-- Distintas colas pueden bindearse al **mismo** exchange con distintas
-  routing keys (o comodín `#`) cuando distintos consumidores necesitan
-  distintos subconjuntos del mismo tipo de evento — así `gateway.scan-outcomes`
-  se bindea a `scan.outcome.#` (las tres variantes) mientras
-  `ms-analisis.scan-outcomes` solo a `scan.outcome.completed` +
-  `scan.outcome.failed`. No se crea un exchange nuevo solo porque un
-  consumidor quiere un subconjunto de eventos que ya existen en otro.
-
-- Un usuario **solo** tiene permisos (`configure`/`write`/`read`, por regex)
-  sobre los exchanges/colas que su servicio necesita — nunca acceso amplio
-  "por si acaso". Ver `docs/security-scope.md`.
-- Los nombres se declaran una sola vez, en `rabbitmq/definitions.json`; no
-  se hardcodean strings sueltas en tests o docs sin que coincidan
-  exactamente con ese archivo (si se referencian ahí, es la fuente de
-  verdad).
-
-## `rabbitmq/definitions.json`
-
-- Es el formato nativo que RabbitMQ importa vía
-  `management.load_definitions` (JSON, con las claves `vhosts`,
-  `exchanges`, `queues`, `bindings`, `users`, `permissions`, `policies`).
-  No se escribe a mano un formato propio: se sigue el schema real que
-  exporta/importa RabbitMQ.
-- Las políticas de dead-lettering (`x-dead-letter-exchange`,
-  `x-dead-letter-routing-key`) y de TTL se declaran como argumentos de la
-  cola (`arguments`) o como `policies`, nunca implícitas en el código de
-  los tests.
-- Ningún valor de este archivo es una credencial real (ver
-  `docs/security-scope.md`): las contraseñas de los usuarios de
-  `definitions.json` son de laboratorio, nunca secretos de producción.
+- Las suscripciones usan `RawMessageDelivery=true`: el cuerpo SQS es el JSON
+  del contrato, sin envoltorio SNS.
+- Un consumidor que quiere un subconjunto de eventos usa una `FilterPolicy`
+  sobre `routing_key` en su suscripción (p. ej. `gateway-scan-outcomes`:
+  prefijo `scan.outcome.`); no se crea un tópico nuevo por eso.
+- Todo reintento acotado es `RedrivePolicy.maxReceiveCount=3` hacia la DLQ.
+- Cifrado SSE-SQS y retenciones cortas en la cola de requests (1 h) y su DLQ
+  (24 h) porque transportan credenciales SSH (`docs/security-scope.md`).
+- Los nombres se declaran una vez, en `src/topology.rs`; tests y docs que los
+  citan deben coincidir exactamente con ese archivo.
 
 ## `contracts/`
 
@@ -55,7 +37,7 @@
 - El contrato copia **literalmente** la forma que `ms-nmap` ya implementa —
   antes de tocar un schema, se verifica contra el `domain.rs`/tests de
   `ms-nmap`, no se re-inventa desde cero.
-- `contracts/README.md` documenta, por cada mensaje: qué exchange/routing-key
+- `contracts/README.md` documenta, por cada mensaje: qué tópico/routing-key
   lo transporta, quién publica, quién consume, y un enlace/referencia al
   módulo de `ms-nmap` que lo define.
 
@@ -66,7 +48,7 @@
   lo contrario en `rustfmt.toml`).
 - **Lints:** `cargo clippy --all-targets -- -D warnings` debe pasar sin
   advertencias (incluye `tests/`).
-- **Async:** runtime `tokio` (los clientes RabbitMQ como `lapin` son
+- **Async:** runtime `tokio` (el SDK de AWS es
   async). Ninguna llamada bloqueante directamente en una tarea async.
 - **Errores:** si el crate tiene lógica propia (p. ej. validación de
   schema), tipos de error con `thiserror`, variantes específicas — no
@@ -78,7 +60,8 @@
   salvo que se decida exigir rustdoc igual — decídelo en la feature que
   primero cree `src/lib.rs` y documenta la decisión.
 - **Tests de integración con IO real:** `testcontainers` levanta
-  `rabbitmq:<tag>-management` real. Nunca mocks de RabbitMQ.
+  LocalStack real (`localstack/localstack:4.4`). Nunca mocks de SNS/SQS ni
+  cuentas AWS. HTTP en claro solo contra ese LocalStack efímero.
 - **Todo test que dependa de Docker se marca**
   `#[ignore = "requiere Docker"]`. `cargo test` (sin flags) corre rápido y
   sin depender de Docker; `cargo test -- --ignored` corre los de
@@ -89,26 +72,26 @@
 | Tipo                    | Convención        | Ejemplo               |
 |-------------------------|--------------------|------------------------|
 | Módulos/archivos        | `snake_case`      | `topology.rs` |
-| Tipos/traits            | `PascalCase`      | `TopologyError` |
-| Funciones / variables   | `snake_case`      | `assert_permissions` |
-| Constantes              | `UPPER_SNAKE`     | `RABBITMQ_IMAGE` |
+| Tipos/traits            | `PascalCase`      | `QueueSpec` |
+| Funciones / variables   | `snake_case`      | `requests_visibility_secs` |
+| Constantes              | `UPPER_SNAKE`     | `MAX_RECEIVE_COUNT` |
 
 ## Tests
 
 - Tests unitarios: `#[cfg(test)] mod tests` al final del propio archivo,
   para lógica pura (p. ej. validación de JSON Schema). Ve las funciones
   privadas del archivo vía `use super::*`.
-- Tests de integración: en `tests/`, contra `rabbitmq:management` real vía
-  `testcontainers`. Verifican, como mínimo:
-  - la topología declarada en `definitions.json` existe tal cual (vhost,
-    exchanges, colas, bindings);
-  - cada usuario puede hacer **solo** lo que sus permisos declaran —
-    incluye un caso **positivo** (puede publicar/consumir lo suyo) y un
-    caso **negativo** (acceso denegado a un exchange/cola ajeno);
-  - el dead-lettering funciona (un mensaje que agota reintentos/TTL
-    termina en la `.dlq` correspondiente);
-  - un payload de ejemplo válido/ inválido contra cada JSON Schema de
-    `contracts/`.
+- Tests de integración: en `tests/`, contra LocalStack real vía
+  `testcontainers` (el test crea la topología que necesita desde
+  `src/topology.rs`). Verifican, como mínimo:
+  - un payload de ejemplo publicado por SNS llega a SQS como cuerpo JSON
+    íntegro que cumple su JSON Schema de `contracts/`;
+  - el atributo `routing_key` y los filtros enrutan exactamente como declara
+    la topología (incluye casos negativos: lo que no coincide no llega);
+  - tras 3 recepciones sin borrar, el mensaje termina en la `-dlq`;
+  - los atributos de cifrado, retención, visibilidad y redrive están presentes.
+- `tests/topology_parity.rs` es offline y compara con `../infra`; se omite
+  (avisando) si ese checkout no existe.
 - Nombres de test descriptivos:
   `ms_nmap_user_cannot_publish_to_ms_analisis_queue`.
 
@@ -116,9 +99,7 @@
 
 ```rust
 #[derive(Debug, thiserror::Error)]
-pub enum TopologyError {
-    #[error("no se pudo conectar con RabbitMQ: {0}")]
-    ConnectionFailed(String),
+pub enum ContractError {
     #[error("el payload no cumple el schema {schema}: {detail}")]
     SchemaViolation { schema: String, detail: String },
 }
