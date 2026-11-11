@@ -106,6 +106,22 @@ lo que `ms-nmap` efectivamente emite. Si en el futuro se decide relajar esto
 (permitir que falten en el mensaje del Broker), es un cambio de contrato a
 discutir explícitamente, no una corrección silenciosa de este README.
 
+### `VulnFinding`: campos opcionales y puerto (finding-port)
+
+`vulnFinding` se reconcilió con `VulnFinding` de `nmap-service/src/domain.rs`.
+Obligatorios: `id`, `severity`, `description`, `nse_script`, `source`,
+`references`. Opcionales (ms-nmap los omite al serializar cuando son `None`):
+
+- `confidence` (`confirmed`/`version_match`) y `patch_state`
+  (`unpatched`/`fixed`): ausentes si se desconocen; nunca `null`.
+- `port` (entero 1-65535) y `protocol` (`tcp`/`udp`): el puerto donde se
+  detectó el hallazgo. Ausente o `null` significa hallazgo a nivel de host o
+  puerto desconocido. Los consumidores deben aceptar hallazgos sin ellos.
+
+En `finding.critical` el `port` conserva `minimum: 0` para que un productor aún
+no migrado que envíe `0` siga siendo válido durante el despliegue; el valor
+correcto para un hallazgo a nivel de host es `null`.
+
 ## `ScanCancellation`
 
 - **Tópico SNS:** `scan-cancellations`.
@@ -195,7 +211,7 @@ valor de laboratorio explícitamente ficticio (p. ej.
 | `scan.started` | nmap-service | vacío |
 | `scan.completed` | nmap-service | `duration_ms`, `finding_counts` (`critical`/`high`/`medium`/`low`/`info`/`unknown`) |
 | `scan.failed` | nmap-service | `reason_code` |
-| `finding.critical` | nmap-service | `port`, `protocol`, `cve_id` (nullable), `severity` (`high`/`critical`), `confidence` (`confirmed`/`version_match`) |
+| `finding.critical` | nmap-service | `port` y `protocol` (ambos nullable: `null` = hallazgo a nivel de host, p. ej. la verificación SSH de parches), `cve_id` (nullable), `severity` (`high`/`critical`), `confidence` (`confirmed`/`version_match`) |
 | `auth.login`, `auth.logout` | gateway | vacío |
 | `ratelimit.hit` | gateway | `route`, `limit`, `window_seconds` |
 | `message.deadlettered` | gateway | `queue`, `reason_code` (nunca el cuerpo) |

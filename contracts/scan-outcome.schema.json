@@ -111,6 +111,24 @@
         "references": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "confidence": {
+          "enum": ["confirmed", "version_match"],
+          "description": "Opcional; ms-nmap la omite si es desconocida (skip_serializing_if)."
+        },
+        "patch_state": {
+          "enum": ["unpatched", "fixed"],
+          "description": "Opcional; ms-nmap la omite si el hallazgo no fue verificado."
+        },
+        "port": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Opcional; puerto del hallazgo. Ausente o null = hallazgo a nivel de host."
+        },
+        "protocol": {
+          "enum": ["tcp", "udp", null],
+          "description": "Opcional; protocolo del puerto. Ausente o null = hallazgo a nivel de host."
         }
       },
       "required": [

@@ -120,15 +120,21 @@
       "type": "object",
       "properties": {
         "port": {
-          "type": "integer",
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0,
-          "maximum": 65535
+          "maximum": 65535,
+          "description": "Port of the finding, or null for a host-level finding."
         },
         "protocol": {
           "enum": [
             "tcp",
-            "udp"
-          ]
+            "udp",
+            null
+          ],
+          "description": "Protocol of the port, or null for a host-level finding."
         },
         "cve_id": {
           "type": [
