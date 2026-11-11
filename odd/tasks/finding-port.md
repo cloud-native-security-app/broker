@@ -61,6 +61,12 @@ Source of truth: `nmap-service/src/domain.rs` `VulnFinding` serde attributes.
 | FP-04 | Docs: `contracts/README.md`, D-15 | [x] same commit as FP-03 (the commit hook requires docs with contract changes) |
 | FP-05 | `make verify` green | [x] `make verify` exit 0 |
 
+## Decisions
+
+- D1 No extra example file for the host-level `finding.critical`: sibling repos (gateway, nmap-service) assert exactly one
+  example per event type, so a second file would break them depending on merge order. The null case is covered by the
+  unit test `finding_critical_accepts_null_port_and_protocol_for_host_level_findings` here and by each sibling's tests.
+
 ## Compatibility note
 
 Existing messages remain valid: every addition is optional or widens a type. Producers can adopt the fields in any
