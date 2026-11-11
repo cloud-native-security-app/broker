@@ -179,3 +179,18 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
   Kinesis se registra y nunca falla la operación de negocio. No se agrega
   `schema_version` (ver `docs/architecture.md`).
 
+## D-15 Puerto opcional en `vulnFinding` y `finding.critical` nullable
+
+- **Decisión:** `vulnFinding` (scan-outcome) incorpora `port` (1-65535) y
+  `protocol` (`tcp`/`udp`) opcionales; ausente o `null` significa hallazgo a
+  nivel de host. En `finding.critical`, `port` y `protocol` pasan a ser
+  nullable. Además se reconcilia `vulnFinding` con lo que `nmap-service` ya
+  emite: se agregan `confidence` y `patch_state`, opcionales.
+- **Contexto:** el puerto se conocía al parsear los scripts NSE por puerto pero
+  se descartaba, por lo que el evento crítico llevaba siempre `port: 0` y
+  `protocol: "tcp"`. La verificación autenticada de parches por SSH produce
+  hallazgos sin puerto.
+- **Consecuencia:** el cambio es retrocompatible (todo es opcional o se
+  ensancha un tipo), por lo que productores y consumidores pueden desplegarse
+  en cualquier orden. En `finding.critical` se mantiene `minimum: 0` para
+  tolerar productores aún no migrados que envíen `0`.

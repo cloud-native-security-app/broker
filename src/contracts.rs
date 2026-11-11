@@ -664,6 +664,21 @@ mod tests {
     }
 
     #[test]
+    fn finding_critical_accepts_null_port_and_protocol_for_host_level_findings() {
+        let mut event = security_event("finding.critical");
+        event["payload"]["port"] = Value::Null;
+        event["payload"]["protocol"] = Value::Null;
+        assert!(
+            validate_security_event(&event).is_ok(),
+            "host-level findings have no port nor protocol"
+        );
+
+        let mut event = security_event("finding.critical");
+        event["payload"]["protocol"] = json!("icmp");
+        assert!(validate_security_event(&event).is_err());
+    }
+
+    #[test]
     fn scan_failed_reason_must_be_a_code_not_free_text() {
         let mut event = security_event("scan.failed");
         event["payload"]["reason_code"] = json!("etapa SSH: tiempo de espera agotado");
@@ -689,5 +704,68 @@ mod tests {
         for event_type in SECURITY_EVENT_TYPES {
             assert!(seen.contains(event_type), "no example for {event_type}");
         }
+    }
+
+    /// Devuelve un `completed` con el hallazgo dado en `vulnerabilities`.
+    fn completed_with_finding(finding: Value) -> Value {
+        let mut payload = valid_scan_outcome_completed();
+        payload["result"]["vulnerabilities"] = json!([finding]);
+        payload
+    }
+
+    fn valid_vuln_finding() -> Value {
+        valid_scan_outcome_completed()["result"]["vulnerabilities"][0].clone()
+    }
+
+    #[test]
+    fn vuln_finding_with_port_and_protocol_passes() {
+        let mut finding = valid_vuln_finding();
+        finding["port"] = json!(22);
+        finding["protocol"] = json!("tcp");
+        assert!(validate_scan_outcome(&completed_with_finding(finding)).is_ok());
+    }
+
+    #[test]
+    fn vuln_finding_without_port_or_with_null_port_passes() {
+        assert!(validate_scan_outcome(&completed_with_finding(valid_vuln_finding())).is_ok());
+
+        let mut finding = valid_vuln_finding();
+        finding["port"] = Value::Null;
+        finding["protocol"] = Value::Null;
+        assert!(
+            validate_scan_outcome(&completed_with_finding(finding)).is_ok(),
+            "un hallazgo a nivel de host no tiene puerto"
+        );
+    }
+
+    #[test]
+    fn vuln_finding_with_out_of_range_port_or_bad_protocol_is_rejected() {
+        for port in [json!(0), json!(70000), json!(-1), json!("22")] {
+            let mut finding = valid_vuln_finding();
+            finding["port"] = port.clone();
+            assert!(
+                validate_scan_outcome(&completed_with_finding(finding)).is_err(),
+                "port {port} debe ser inválido"
+            );
+        }
+        let mut finding = valid_vuln_finding();
+        finding["protocol"] = json!("icmp");
+        assert!(validate_scan_outcome(&completed_with_finding(finding)).is_err());
+    }
+
+    #[test]
+    fn vuln_finding_accepts_confidence_and_patch_state() {
+        let mut finding = valid_vuln_finding();
+        finding["confidence"] = json!("version_match");
+        finding["patch_state"] = json!("unpatched");
+        assert!(validate_scan_outcome(&completed_with_finding(finding)).is_ok());
+
+        let mut finding = valid_vuln_finding();
+        finding["confidence"] = json!("guess");
+        assert!(validate_scan_outcome(&completed_with_finding(finding)).is_err());
+
+        let mut finding = valid_vuln_finding();
+        finding["patch_state"] = json!("maybe");
+        assert!(validate_scan_outcome(&completed_with_finding(finding)).is_err());
     }
 }

@@ -30,6 +30,7 @@ Out: producers and consumers (each sibling repo), Terraform, any shared crate.
 ## Tooling
 
 - TDD mode: on (source: user global config "Strict TDD Mode: enabled"). Runner: `make verify` (`cargo test` for the loop).
+- RED observed: `cargo test --lib` 34 passed, 4 failed (3 vulnFinding tests, 1 finding.critical null test); GREEN: 38 passed.
 - Route: one delegated writer (task KAP-07b), no SDD.
 
 ## Reconciled `vulnFinding` fields
@@ -54,10 +55,10 @@ Source of truth: `nmap-service/src/domain.rs` `VulnFinding` serde attributes.
 
 | ID | Task | Done |
 |---|---|---|
-| FP-01 | Feature document | [ ] |
-| FP-02 | RED: failing tests (vulnFinding with/without port, port 0/70000, bad protocol, confidence/patch_state; finding.critical null port/protocol) | [ ] |
-| FP-03 | GREEN: schemas + example | [ ] |
-| FP-04 | Docs: `contracts/README.md`, D-15 | [ ] |
+| FP-01 | Feature document | [x] a404d9a |
+| FP-02 | RED: failing tests (vulnFinding with/without port, port 0/70000, bad protocol, confidence/patch_state; finding.critical null port/protocol) | [x] 4 failed |
+| FP-03 | GREEN: schemas + example | [x] 38 passed |
+| FP-04 | Docs: `contracts/README.md`, D-15 | [x] same commit as FP-03 (the commit hook requires docs with contract changes) |
 | FP-05 | `make verify` green | [ ] |
 
 ## Compatibility note
