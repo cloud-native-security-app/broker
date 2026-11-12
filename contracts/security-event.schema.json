@@ -24,6 +24,15 @@
             }
           ],
           "description": "IPv4 or IPv6 target, same patterns as scan-request.schema.json#/properties/ip."
+        },
+        "scan_mode": {
+          "type": "string",
+          "enum": [
+            "ssh",
+            "network"
+          ],
+          "default": "ssh",
+          "description": "Scan mode of the request, same enum as scan-request.schema.json#/properties/scan_mode. Optional; absence means ssh, so events from producers that predate the field stay valid."
         }
       },
       "required": [

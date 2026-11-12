@@ -10,6 +10,15 @@
       "minLength": 1,
       "description": "Identificador de correlación de la solicitud de escaneo (newtype CorrelationId en ms-nmap, serde(transparent) sobre String)."
     },
+    "scan_mode": {
+      "type": "string",
+      "enum": [
+        "ssh",
+        "network"
+      ],
+      "default": "ssh",
+      "description": "How the target is scanned. 'ssh' (default when absent, so producers that predate this field stay valid): ms-nmap opens an SSH session on the target and needs network_user, ssh_credentials_ref and has_sudo. 'network': ms-nmap scans the target IP from its own container; the three SSH fields must NOT be present, so a credential never travels with a network scan."
+    },
     "ip": {
       "type": "string",
       "description": "Dirección IP objetivo del escaneo, IPv4 o IPv6 (serde serializa IpAddr como string). Se valida con un patrón regex en vez de 'format: ipv4/ipv6' para no depender de que el validador de turno implemente esas format-assertions (algunos las tratan como meras anotaciones en 2020-12).",
@@ -42,10 +51,35 @@
   "required": [
     "correlation_id",
     "ip",
-    "network_user",
-    "ssh_credentials_ref",
-    "has_sudo",
     "requested_by"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "scan_mode": {
+            "const": "network"
+          }
+        },
+        "required": [
+          "scan_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "network_user": false,
+          "ssh_credentials_ref": false,
+          "has_sudo": false
+        }
+      },
+      "else": {
+        "required": [
+          "network_user",
+          "ssh_credentials_ref",
+          "has_sudo"
+        ]
+      }
+    }
+  ]
 }
