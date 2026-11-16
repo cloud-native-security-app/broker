@@ -29,6 +29,25 @@ verificación contra el repo hermano `nmap-service`.
 Los 6 campos son `required` y el schema usa `additionalProperties: false` —
 ningún campo extra pasa silenciosamente.
 
+### `scan_mode` (additive)
+
+Optional `scan_mode`: `"ssh"` (default) or `"network"`. Absence means `ssh`, so
+producers that predate the field stay valid.
+
+| Mode | Required | Forbidden |
+|---|---|---|
+| `ssh` (or absent) | `correlation_id`, `ip`, `requested_by`, `network_user`, `ssh_credentials_ref`, `has_sudo` | none |
+| `network` | `correlation_id`, `ip`, `requested_by` | `network_user`, `ssh_credentials_ref`, `has_sudo` |
+
+In `network` mode `ms-nmap` scans the target IP from its own container, so a
+credential must never travel with the request: the schema rejects the three SSH
+fields (`if`/`then`/`else` on `scan_mode`, `additionalProperties: false` is
+kept). `has_sudo` is forbidden too because it only describes the SSH session.
+The `scan.requested` event payload carries the same optional `scan_mode`.
+Examples: [`examples/scan-request/`](./examples/scan-request/) (valid) and
+`examples/scan-request/invalid/` (must be rejected); `src/contracts.rs`
+validates both.
+
 `ssh_credentials_ref` es la credencial SSH **real** con la que `ms-nmap` se
 autentica en el objetivo, no una referencia opaca — ver
 `docs/security-scope.md`. El schema la tipa como `string` sin más: no hay
@@ -206,7 +225,7 @@ valor de laboratorio explícitamente ficticio (p. ej.
 
 | `event_type` | Productor | `payload` |
 |---|---|---|
-| `scan.requested` | gateway | `target` (IP) |
+| `scan.requested` | gateway | `target` (IP), `scan_mode?` (`ssh` default / `network`) |
 | `scan.cancelled` | gateway | `target?` |
 | `scan.started` | nmap-service | vacío |
 | `scan.completed` | nmap-service | `duration_ms`, `finding_counts` (`critical`/`high`/`medium`/`low`/`info`/`unknown`) |

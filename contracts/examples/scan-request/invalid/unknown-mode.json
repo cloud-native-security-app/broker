@@ -1,0 +1,6 @@
+{
+  "correlation_id": "req-2026-0046",
+  "scan_mode": "udp",
+  "ip": "198.51.100.4",
+  "requested_by": "analyst@example.test"
+}

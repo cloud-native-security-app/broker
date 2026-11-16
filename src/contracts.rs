@@ -248,6 +248,130 @@ mod tests {
         );
     }
 
+    fn valid_network_scan_request() -> Value {
+        json!({
+            "correlation_id": "req-2026-0043",
+            "scan_mode": "network",
+            "ip": "198.51.100.4",
+            "requested_by": "analyst@example.test"
+        })
+    }
+
+    #[test]
+    fn scan_request_with_explicit_ssh_mode_passes() {
+        let mut payload = valid_scan_request();
+        payload["scan_mode"] = json!("ssh");
+        assert!(validate_scan_request(&payload).is_ok());
+    }
+
+    #[test]
+    fn scan_request_without_scan_mode_still_means_ssh() {
+        // Additive contract: producers that predate scan_mode stay valid.
+        assert!(validate_scan_request(&valid_scan_request()).is_ok());
+        for field in ["network_user", "ssh_credentials_ref", "has_sudo"] {
+            let mut payload = valid_scan_request();
+            payload.as_object_mut().unwrap().remove(field);
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "ssh mode (implicit) without {field} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn scan_request_ssh_mode_requires_credentials_fields() {
+        for field in ["network_user", "ssh_credentials_ref", "has_sudo"] {
+            let mut payload = valid_scan_request();
+            payload["scan_mode"] = json!("ssh");
+            payload.as_object_mut().unwrap().remove(field);
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "explicit ssh mode without {field} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn network_scan_request_without_credentials_passes() {
+        assert!(validate_scan_request(&valid_network_scan_request()).is_ok());
+    }
+
+    #[test]
+    fn network_scan_request_forbids_credentials_and_sudo() {
+        // A credential must never travel with a network scan.
+        for (field, value) in [
+            ("network_user", json!("scanner")),
+            ("ssh_credentials_ref", json!(LAB_SSH_CREDENTIALS_REF)),
+            ("has_sudo", json!(false)),
+        ] {
+            let mut payload = valid_network_scan_request();
+            payload[field] = value;
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "network mode carrying {field} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn scan_request_with_unknown_scan_mode_is_rejected() {
+        for mode in [json!("udp"), json!("SSH"), json!(""), Value::Null, json!(1)] {
+            let mut payload = valid_scan_request();
+            payload["scan_mode"] = mode.clone();
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "scan_mode {mode} must be rejected"
+            );
+        }
+    }
+
+    const SCAN_REQUEST_EXAMPLES_DIR: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/contracts/examples/scan-request"
+    );
+
+    fn read_examples(dir: &str) -> Vec<(String, Value)> {
+        let mut out: Vec<(String, Value)> = std::fs::read_dir(dir)
+            .unwrap_or_else(|err| panic!("{dir}: {err}"))
+            .map(|entry| entry.expect("dir entry").path())
+            .filter(|path| path.is_file())
+            .map(|path| {
+                let text = std::fs::read_to_string(&path).expect("read example");
+                let value = serde_json::from_str(&text).expect("example is JSON");
+                (path.display().to_string(), value)
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    #[test]
+    fn scan_request_examples_validate_and_cover_both_modes() {
+        let mut modes = std::collections::BTreeSet::new();
+        for (name, value) in read_examples(SCAN_REQUEST_EXAMPLES_DIR) {
+            validate_scan_request(&value)
+                .unwrap_or_else(|err| panic!("{name} must validate: {err}"));
+            modes.insert(value["scan_mode"].as_str().unwrap_or("ssh").to_string());
+        }
+        assert_eq!(
+            modes,
+            ["network", "ssh"].iter().map(|s| s.to_string()).collect()
+        );
+    }
+
+    #[test]
+    fn invalid_scan_request_examples_are_rejected() {
+        let dir = format!("{SCAN_REQUEST_EXAMPLES_DIR}/invalid");
+        let examples = read_examples(&dir);
+        assert!(examples.len() >= 3, "expected the invalid examples");
+        for (name, value) in examples {
+            assert!(
+                validate_scan_request(&value).is_err(),
+                "{name} must be rejected"
+            );
+        }
+    }
+
     #[test]
     fn scan_request_with_invalid_ip_is_rejected() {
         let mut payload = valid_scan_request();
@@ -683,6 +807,26 @@ mod tests {
         let mut event = security_event("scan.failed");
         event["payload"]["reason_code"] = json!("etapa SSH: tiempo de espera agotado");
         assert!(validate_security_event(&event).is_err());
+    }
+
+    #[test]
+    fn scan_requested_payload_accepts_scan_mode_and_stays_additive() {
+        let mut event = security_event("scan.requested");
+        assert!(
+            validate_security_event(&event).is_ok(),
+            "payload without scan_mode (existing producers) stays valid"
+        );
+        for mode in ["ssh", "network"] {
+            event["payload"]["scan_mode"] = json!(mode);
+            assert!(validate_security_event(&event).is_ok(), "{mode}");
+        }
+        for mode in [json!("udp"), Value::Null, json!("")] {
+            event["payload"]["scan_mode"] = mode.clone();
+            assert!(
+                validate_security_event(&event).is_err(),
+                "scan_mode {mode} must be rejected"
+            );
+        }
     }
 
     #[test]

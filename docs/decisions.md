@@ -194,3 +194,16 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
   ensancha un tipo), por lo que productores y consumidores pueden desplegarse
   en cualquier orden. En `finding.critical` se mantiene `minimum: 0` para
   tolerar productores aún no migrados que envíen `0`.
+
+## D-16 `scan_mode` in `scan-request` and `scan.requested`
+
+- **Decision:** `scan-request` gains an optional `scan_mode` (`ssh` default,
+  `network`). `network_user`, `ssh_credentials_ref` and `has_sudo` are required
+  only in `ssh` mode and forbidden in `network` mode. The `scan.requested`
+  event payload gains the same optional `scan_mode`.
+- **Context:** network mode lets `ms-nmap` scan an IP from its own container
+  without SSH credentials.
+- **Consequence:** additive and backwards compatible: absence means `ssh`, so
+  existing producers, consumers and events stay valid and can deploy in any
+  order. Forbidding the SSH fields in network mode guarantees a credential never
+  travels with a network scan.
