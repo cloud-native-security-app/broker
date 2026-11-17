@@ -207,3 +207,18 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
   existing producers, consumers and events stay valid and can deploy in any
   order. Forbidding the SSH fields in network mode guarantees a credential never
   travels with a network scan.
+
+## D-17 `target_host` and `extra_port` in network `scan-request`
+
+- **Decision:** `scan-request` gains two optional fields allowed only when
+  `scan_mode` is `network`: `target_host` (RFC 1123 hostname, at most 253
+  characters, as typed by the user) and `extra_port` (integer 1..65535). The
+  `scan.requested` payload gains the same optional `target_host`; its `target`
+  stays the IP. `ip` stays required.
+- **Context:** users scan by hostname or URL. The gateway resolves the name,
+  checks every address against its policy and pins one IP, so the request must
+  carry both the pinned IP and the name.
+- **Consequence:** anti-DNS-rebinding by construction: `ip` is the only scan
+  target and nmap never resolves `target_host`; it only uses it as the HTTP
+  host. The hostname pattern keeps a leading `-` out of nmap's argv. Additive
+  and backwards compatible; consumers deploy before producers.

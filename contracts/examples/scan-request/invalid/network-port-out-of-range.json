@@ -1,0 +1,7 @@
+{
+  "correlation_id": "req-2026-0048",
+  "scan_mode": "network",
+  "ip": "198.51.100.4",
+  "extra_port": 65536,
+  "requested_by": "analyst@example.test"
+}

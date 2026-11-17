@@ -1,0 +1,13 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a44",
+  "event_type": "scan.requested",
+  "occurred_at": "2026-11-09T12:31:00Z",
+  "source": "gateway",
+  "actor_sub": "user-sub-123",
+  "scan_id": "corr-45",
+  "payload": {
+    "target": "198.51.100.4",
+    "target_host": "app.example.test",
+    "scan_mode": "network"
+  }
+}

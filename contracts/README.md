@@ -44,6 +44,14 @@ credential must never travel with the request: the schema rejects the three SSH
 fields (`if`/`then`/`else` on `scan_mode`, `additionalProperties: false` is
 kept). `has_sudo` is forbidden too because it only describes the SSH session.
 The `scan.requested` event payload carries the same optional `scan_mode`.
+
+`network` mode also accepts two optional fields, forbidden in `ssh` mode:
+`target_host` (RFC 1123 hostname as typed by the user, at most 253 characters,
+no leading hyphen; display and HTTP virtual host only) and `extra_port`
+(integer 1..65535, a URL port scanned in addition to nmap's default ports).
+`ip` stays required and is always the address that is scanned, so nmap never
+resolves a name. The `scan.requested` payload carries the same optional
+`target_host`; its `target` stays the IP.
 Examples: [`examples/scan-request/`](./examples/scan-request/) (valid) and
 `examples/scan-request/invalid/` (must be rejected); `src/contracts.rs`
 validates both.
@@ -225,7 +233,7 @@ valor de laboratorio explícitamente ficticio (p. ej.
 
 | `event_type` | Productor | `payload` |
 |---|---|---|
-| `scan.requested` | gateway | `target` (IP), `scan_mode?` (`ssh` default / `network`) |
+| `scan.requested` | gateway | `target` (IP), `target_host?` (hostname as typed), `scan_mode?` (`ssh` default / `network`) |
 | `scan.cancelled` | gateway | `target?` |
 | `scan.started` | nmap-service | vacío |
 | `scan.completed` | nmap-service | `duration_ms`, `finding_counts` (`critical`/`high`/`medium`/`low`/`info`/`unknown`) |

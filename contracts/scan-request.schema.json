@@ -31,6 +31,19 @@
         }
       ]
     },
+    "target_host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$",
+      "description": "Network mode only. Hostname as typed by the user (RFC 1123: dot-separated labels of letters, digits and hyphen, 1..63 characters each, no leading or trailing hyphen per label, at most 253 characters in total). Used for display and as the HTTP virtual host only; the scanned address is always `ip`. The pattern also keeps a leading '-' out of nmap's argv."
+    },
+    "extra_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "description": "Network mode only. URL port to scan in addition to nmap's default ports."
+    },
     "network_user": {
       "type": "string",
       "minLength": 1
@@ -78,7 +91,11 @@
           "network_user",
           "ssh_credentials_ref",
           "has_sudo"
-        ]
+        ],
+        "properties": {
+          "target_host": false,
+          "extra_port": false
+        }
       }
     }
   ]
