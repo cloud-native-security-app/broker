@@ -156,7 +156,7 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
 - **Consecuencia:** se pierden los usuarios por servicio y TLS propio (todas las
   tareas ECS usan `LabRole`; se mitiga con políticas de recurso). Entrega
   at-least-once: los consumidores deben ser idempotentes por `correlation_id`.
-  Cifrado SSE-SQS (sin KMS) y retención de 1 h en requests y 24 h en su DLQ.
+  Cifrado SSE-SQS (sin KMS) y retención de 70 min en requests (más que 3 ciclos de visibilidad, para que un mensaje fallido llegue a la DLQ antes de expirar) y 24 h en su DLQ.
   `tests/topology_parity.rs` evita que `src/topology.rs`, `messaging.tf` y
   `localstack-init.sh` diverjan.
 

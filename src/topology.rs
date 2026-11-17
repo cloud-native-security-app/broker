@@ -59,8 +59,10 @@ pub fn queues() -> Vec<QueueSpec> {
             topic: "scan-requests",
             routing_key_prefix: None,
             visibility_secs: requests_visibility_secs(10, 900, 900, 300),
-            // Requests carry SSH credentials: keep them briefly (Q4).
-            retention_secs: 3600,
+            // Requests carry SSH credentials: keep them briefly (Q4), but long
+            // enough for MAX_RECEIVE_COUNT visibility cycles (3 x 1270 s) to
+            // redrive a failing request to the DLQ before it expires.
+            retention_secs: 4200,
             dlq_retention_secs: 24 * 3600,
         },
         QueueSpec {
@@ -112,15 +114,29 @@ mod tests {
     }
 
     #[test]
-    fn requests_queue_keeps_ssh_credentials_for_at_most_one_hour_and_dlq_one_day() {
+    fn requests_queue_keeps_ssh_credentials_for_70_minutes_and_dlq_one_day() {
         let queues = queues();
         let requests = queues
             .iter()
             .find(|q| q.name == "ms-nmap-scan-requests")
             .expect("requests queue");
-        assert_eq!(requests.retention_secs, 3600);
+        assert_eq!(requests.retention_secs, 4200);
         assert_eq!(requests.dlq_retention_secs, 24 * 3600);
         assert_eq!(requests.visibility_secs, 1270);
+    }
+
+    #[test]
+    fn every_queue_retains_a_failing_message_until_it_is_redriven() {
+        for queue in queues() {
+            assert!(
+                queue.retention_secs > MAX_RECEIVE_COUNT * queue.visibility_secs,
+                "{}: retention {} s must exceed {} receives x {} s visibility",
+                queue.name,
+                queue.retention_secs,
+                MAX_RECEIVE_COUNT,
+                queue.visibility_secs
+            );
+        }
     }
 
     #[test]

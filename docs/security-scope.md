@@ -68,7 +68,7 @@
 ## Retención y logging
 
 - Las colas no retienen mensajes más tiempo del necesario para su
-  propósito operativo: `ms-nmap-scan-requests` conserva 1 h y su DLQ 24 h
+  propósito operativo: `ms-nmap-scan-requests` conserva 70 min y su DLQ 24 h
   (llevan credenciales SSH); el resto usa los valores por defecto de SQS. Las
   copias en DLQ persisten la credencial hasta que vence la retención.
 - Ningún test, script o configuración de este repo debe loggear el cuerpo

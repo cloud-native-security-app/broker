@@ -26,7 +26,7 @@ fue retirado (`docs/decisions.md`, D-13).
 - Ningún test, script ni config loguea el cuerpo completo de un mensaje que
   pueda contener `ssh_credentials_ref` (en aserciones se compara con `assert!`
   sin imprimir el cuerpo).
-- Retención acotada: la cola de requests conserva 1 h y su DLQ 24 h, con
+- Retención acotada: la cola de requests conserva 70 min (más que `MAX_RECEIVE_COUNT` ciclos de visibilidad) y su DLQ 24 h, con
   SSE-SQS; nada que retenga mensajes con credenciales indefinidamente.
 
 ## Topología y contratos (bloqueante)

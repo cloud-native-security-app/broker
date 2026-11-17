@@ -74,8 +74,8 @@ fn assert_queue_in_terraform(tf: &str, spec: &QueueSpec) {
             ),
             "requests visibility formula (Q1)"
         );
-        assert_eq!(spec.retention_secs, 3600);
-        assert_eq!(field_value(block, "retention"), "3600");
+        assert_eq!(spec.retention_secs, 4200);
+        assert_eq!(field_value(block, "retention"), "4200");
         assert_eq!(spec.dlq_retention_secs, 24 * 3600);
         assert_eq!(field_value(block, "dlq_retention"), "24 * 3600");
     } else {
