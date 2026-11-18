@@ -69,11 +69,13 @@ fn assert_queue_in_terraform(tf: &str, spec: &QueueSpec) {
     }
     if spec.name == "ms-nmap-scan-requests" {
         assert!(
-            block.contains("var.ssh_connect_timeout_secs + var.ssh_command_timeout_secs + 60"),
+            block.contains(
+                "max(var.ssh_connect_timeout_secs + var.ssh_command_timeout_secs, var.local_scan_timeout_secs) + var.nvd_enrichment_budget_secs + 60"
+            ),
             "requests visibility formula (Q1)"
         );
-        assert_eq!(spec.retention_secs, 3600);
-        assert_eq!(field_value(block, "retention"), "3600");
+        assert_eq!(spec.retention_secs, 4200);
+        assert_eq!(field_value(block, "retention"), "4200");
         assert_eq!(spec.dlq_retention_secs, 24 * 3600);
         assert_eq!(field_value(block, "dlq_retention"), "24 * 3600");
     } else {
@@ -130,7 +132,7 @@ fn localstack_init_creates_the_same_names_filter_and_redrive() {
     }
     assert!(init.contains(&format!("MAX_RECEIVE_COUNT={MAX_RECEIVE_COUNT}")));
     assert!(
-        init.contains("CONNECT_TIMEOUT + COMMAND_TIMEOUT + 60"),
+        init.contains("REQUESTS_VISIBILITY=$((LONGEST_SCAN + NVD_BUDGET + 60))"),
         "requests visibility formula (Q1)"
     );
     for spec in topology::queues() {

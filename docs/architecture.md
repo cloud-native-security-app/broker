@@ -69,7 +69,7 @@ define el canal y el contrato.
   idempotentes por `correlation_id`; no hay orden garantizado (decisión Q3).
 - **Sensibilidad:** el `ScanRequest` lleva una credencial SSH real
   (`ssh_credentials_ref`; ver `docs/security-scope.md`). SSE-SQS en todas las
-  colas, retención de 1 h en la cola de requests y 24 h en su DLQ, HTTPS-only
+  colas, retención de 70 min en la cola de requests y 24 h en su DLQ, HTTPS-only
   por política.
 - **El contrato de mensajes se copia literal desde `ms-nmap`, no se
   re-deriva.** El JSON Schema debe coincidir con lo que `ms-nmap` ya

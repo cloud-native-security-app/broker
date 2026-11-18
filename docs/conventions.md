@@ -23,7 +23,7 @@ de nombres y parámetros es `src/topology.rs`; `infra` la implementa
   sobre `routing_key` en su suscripción (p. ej. `gateway-scan-outcomes`:
   prefijo `scan.outcome.`); no se crea un tópico nuevo por eso.
 - Todo reintento acotado es `RedrivePolicy.maxReceiveCount=3` hacia la DLQ.
-- Cifrado SSE-SQS y retenciones cortas en la cola de requests (1 h) y su DLQ
+- Cifrado SSE-SQS y retenciones cortas en la cola de requests (70 min) y su DLQ
   (24 h) porque transportan credenciales SSH (`docs/security-scope.md`).
 - Los nombres se declaran una vez, en `src/topology.rs`; tests y docs que los
   citan deben coincidir exactamente con ese archivo.

@@ -1,0 +1,11 @@
+{
+  "correlation_id": "req-2026-0046",
+  "scan_mode": "ssh",
+  "ip": "198.51.100.4",
+  "network_user": "scanner",
+  "ssh_credentials_ref": "lab-only-not-a-real-secret",
+  "has_sudo": false,
+  "target_host": "app.example.test",
+  "extra_port": 8443,
+  "requested_by": "analyst@example.test"
+}

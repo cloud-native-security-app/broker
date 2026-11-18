@@ -1,0 +1,7 @@
+{
+  "correlation_id": "req-2026-0047",
+  "scan_mode": "network",
+  "ip": "198.51.100.4",
+  "target_host": "-oX.example.test",
+  "requested_by": "analyst@example.test"
+}

@@ -1,0 +1,8 @@
+{
+  "correlation_id": "req-2026-0045",
+  "scan_mode": "network",
+  "ip": "198.51.100.4",
+  "target_host": "app.example.test",
+  "extra_port": 8443,
+  "requested_by": "analyst@example.test"
+}

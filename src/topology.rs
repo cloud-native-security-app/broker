@@ -36,13 +36,20 @@ impl QueueSpec {
 /// `RedrivePolicy.maxReceiveCount` shared by every consumer queue.
 pub const MAX_RECEIVE_COUNT: u32 = 3;
 
-/// Visibility timeout of `ms-nmap-scan-requests` (Q1): a scan never outlives
-/// its SSH timeouts, plus a fixed margin.
-pub fn requests_visibility_secs(ssh_connect_secs: u32, ssh_command_secs: u32) -> u32 {
-    ssh_connect_secs + ssh_command_secs + 60
+/// Visibility timeout of `ms-nmap-scan-requests` (Q1): the longest scan (SSH
+/// timeouts or the local network-mode nmap timeout), plus the NVD enrichment
+/// budget, plus a fixed margin. Mirrors `infra/terraform/messaging.tf`.
+pub fn requests_visibility_secs(
+    ssh_connect_secs: u32,
+    ssh_command_secs: u32,
+    local_scan_secs: u32,
+    nvd_budget_secs: u32,
+) -> u32 {
+    (ssh_connect_secs + ssh_command_secs).max(local_scan_secs) + nvd_budget_secs + 60
 }
 
-/// The three consumer queues with infra's default SSH timeouts (10 s, 900 s).
+/// The three consumer queues with infra's default timeouts (SSH 10 s + 900 s,
+/// local scan 900 s, NVD budget 300 s).
 pub fn queues() -> Vec<QueueSpec> {
     const DEFAULT_RETENTION: u32 = 4 * 24 * 3600;
     const DEFAULT_DLQ_RETENTION: u32 = 14 * 24 * 3600;
@@ -51,9 +58,11 @@ pub fn queues() -> Vec<QueueSpec> {
             name: "ms-nmap-scan-requests",
             topic: "scan-requests",
             routing_key_prefix: None,
-            visibility_secs: requests_visibility_secs(10, 900),
-            // Requests carry SSH credentials: keep them briefly (Q4).
-            retention_secs: 3600,
+            visibility_secs: requests_visibility_secs(10, 900, 900, 300),
+            // Requests carry SSH credentials: keep them briefly (Q4), but long
+            // enough for MAX_RECEIVE_COUNT visibility cycles (3 x 1270 s) to
+            // redrive a failing request to the DLQ before it expires.
+            retention_secs: 4200,
             dlq_retention_secs: 24 * 3600,
         },
         QueueSpec {
@@ -88,9 +97,10 @@ mod tests {
     }
 
     #[test]
-    fn requests_visibility_covers_both_ssh_timeouts_plus_margin() {
-        assert_eq!(requests_visibility_secs(10, 900), 970);
-        assert_eq!(requests_visibility_secs(1, 1), 62);
+    fn requests_visibility_covers_the_longest_scan_plus_nvd_budget_and_margin() {
+        assert_eq!(requests_visibility_secs(10, 900, 900, 300), 1270);
+        assert_eq!(requests_visibility_secs(1, 1, 1, 0), 62);
+        assert_eq!(requests_visibility_secs(10, 100, 600, 0), 660);
     }
 
     #[test]
@@ -104,15 +114,29 @@ mod tests {
     }
 
     #[test]
-    fn requests_queue_keeps_ssh_credentials_for_at_most_one_hour_and_dlq_one_day() {
+    fn requests_queue_keeps_ssh_credentials_for_70_minutes_and_dlq_one_day() {
         let queues = queues();
         let requests = queues
             .iter()
             .find(|q| q.name == "ms-nmap-scan-requests")
             .expect("requests queue");
-        assert_eq!(requests.retention_secs, 3600);
+        assert_eq!(requests.retention_secs, 4200);
         assert_eq!(requests.dlq_retention_secs, 24 * 3600);
-        assert_eq!(requests.visibility_secs, 970);
+        assert_eq!(requests.visibility_secs, 1270);
+    }
+
+    #[test]
+    fn every_queue_retains_a_failing_message_until_it_is_redriven() {
+        for queue in queues() {
+            assert!(
+                queue.retention_secs > MAX_RECEIVE_COUNT * queue.visibility_secs,
+                "{}: retention {} s must exceed {} receives x {} s visibility",
+                queue.name,
+                queue.retention_secs,
+                MAX_RECEIVE_COUNT,
+                queue.visibility_secs
+            );
+        }
     }
 
     #[test]

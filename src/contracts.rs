@@ -314,6 +314,84 @@ mod tests {
     }
 
     #[test]
+    fn network_scan_request_accepts_target_host_and_extra_port() {
+        let mut payload = valid_network_scan_request();
+        payload["target_host"] = json!("app.example.test");
+        payload["extra_port"] = json!(8443);
+        assert!(validate_scan_request(&payload).is_ok());
+        for host in ["localhost", "a", "a-b.c1.example", "A.Example.TEST"] {
+            payload["target_host"] = json!(host);
+            assert!(validate_scan_request(&payload).is_ok(), "{host}");
+        }
+        for port in [1, 80, 65535] {
+            payload["extra_port"] = json!(port);
+            assert!(validate_scan_request(&payload).is_ok(), "{port}");
+        }
+    }
+
+    #[test]
+    fn network_scan_request_rejects_malformed_target_host() {
+        let too_long_label = "a".repeat(64);
+        let too_long_name = vec!["a".repeat(60); 5].join(".");
+        for host in [
+            "-oX.example.test",
+            "example-.test",
+            "a..b",
+            ".example.test",
+            "example.test.",
+            "exa mple.test",
+            "exa_mple.test",
+            "app.example.test/path",
+            "app.example.test:8443",
+            "",
+            too_long_label.as_str(),
+            too_long_name.as_str(),
+        ] {
+            let mut payload = valid_network_scan_request();
+            payload["target_host"] = json!(host);
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "target_host {host:?} must be rejected"
+            );
+        }
+        let mut payload = valid_network_scan_request();
+        payload["target_host"] = json!(1);
+        assert!(validate_scan_request(&payload).is_err());
+    }
+
+    #[test]
+    fn network_scan_request_rejects_extra_port_out_of_range() {
+        for port in [json!(0), json!(65536), json!(-1), json!(80.5), json!("80")] {
+            let mut payload = valid_network_scan_request();
+            payload["extra_port"] = port.clone();
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "extra_port {port} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn ssh_scan_request_forbids_target_host_and_extra_port() {
+        for (field, value) in [
+            ("target_host", json!("app.example.test")),
+            ("extra_port", json!(8443)),
+        ] {
+            let mut payload = valid_scan_request();
+            payload[field] = value.clone();
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "ssh mode carrying {field} must be rejected"
+            );
+            payload["scan_mode"] = json!("ssh");
+            assert!(
+                validate_scan_request(&payload).is_err(),
+                "{field} explicit ssh"
+            );
+        }
+    }
+
+    #[test]
     fn scan_request_with_unknown_scan_mode_is_rejected() {
         for mode in [json!("udp"), json!("SSH"), json!(""), Value::Null, json!(1)] {
             let mut payload = valid_scan_request();
@@ -827,6 +905,31 @@ mod tests {
                 "scan_mode {mode} must be rejected"
             );
         }
+    }
+
+    #[test]
+    fn scan_requested_payload_accepts_optional_target_host_and_keeps_target_an_ip() {
+        let mut event = security_event("scan.requested");
+        event["payload"]["target_host"] = json!("app.example.test");
+        assert!(validate_security_event(&event).is_ok());
+        for host in [
+            json!("-bad.example.test"),
+            json!("a..b"),
+            json!(""),
+            Value::Null,
+        ] {
+            event["payload"]["target_host"] = host.clone();
+            assert!(
+                validate_security_event(&event).is_err(),
+                "target_host {host} must be rejected"
+            );
+        }
+        event["payload"]["target_host"] = json!("app.example.test");
+        event["payload"]["target"] = json!("app.example.test");
+        assert!(
+            validate_security_event(&event).is_err(),
+            "target stays the pinned IP"
+        );
     }
 
     #[test]
