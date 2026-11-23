@@ -1,0 +1,19 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a11",
+  "event_type": "siem.alert",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "wazuh",
+  "payload": {
+    "rule_id": "86601",
+    "rule_level": 12,
+    "severity": "high",
+    "description": "Suricata: Alert - ET SCAN Potential SSH Scan",
+    "agent": {
+      "id": "001",
+      "name": "lab-target"
+    },
+    "src_ip": "203.0.113.7",
+    "dest_ip": "198.51.100.4",
+    "signature": "ET SCAN Potential SSH Scan"
+  }
+}

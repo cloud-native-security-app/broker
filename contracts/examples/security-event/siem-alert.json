@@ -1,0 +1,17 @@
+{
+  "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a10",
+  "event_type": "siem.alert",
+  "occurred_at": "2026-11-09T12:30:00Z",
+  "source": "wazuh",
+  "payload": {
+    "rule_id": "5710",
+    "rule_level": 5,
+    "severity": "low",
+    "description": "sshd: attempt to login using a non-existent user",
+    "agent": {
+      "id": "001",
+      "name": "lab-target"
+    },
+    "src_ip": "203.0.113.7"
+  }
+}
