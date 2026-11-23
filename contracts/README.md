@@ -15,7 +15,7 @@ verificación contra el repo hermano `nmap-service`.
 | [`scan-request.schema.json`](./scan-request.schema.json) | `ScanRequest` | Implementado y publicado en `ms-nmap` |
 | [`scan-outcome.schema.json`](./scan-outcome.schema.json) | `ScanOutcome` (`started`/`completed`/`failed`) | `completed`/`failed` implementados; `started` **PENDIENTE** (ver abajo) |
 | [`scan-cancellation.schema.json`](./scan-cancellation.schema.json) | `ScanCancellation` | Canal y schema definidos aquí; consumo/honra en `ms-nmap` **PENDIENTE** (ver abajo) |
-| [`security-event.schema.json`](./security-event.schema.json) | `SecurityEvent` (11 `event_type`) | Definido aquí (D-14); los productores lo implementan en KAP-06/07/08 |
+| [`security-event.schema.json`](./security-event.schema.json) | `SecurityEvent` (12 `event_type`) | Definido aquí (D-14); los productores lo implementan en KAP-06/07/08 |
 
 ## `ScanRequest`
 
@@ -222,14 +222,15 @@ valor de laboratorio explícitamente ficticio (p. ej.
 - **Publican:** Gateway, `nmap-service`, `user-service`. **Consume:** Gateway
   (panel de administración).
 - **Clave de partición** (solo documentada, el schema no la impone): `scan_id`,
-  y si no existe, `actor_sub`.
+  si no existe, `actor_sub`, y para `siem.alert`, `agent.id`.
 - **Entrega at-least-once:** los consumidores deduplican por `event_id`.
 - Sobre: `event_id` (UUID), `event_type`, `occurred_at` (RFC 3339), `source`
-  (`gateway`/`nmap-service`/`user-service`), `actor_sub?`, `scan_id?`
+  (`gateway`/`nmap-service`/`user-service`/`wazuh`), `actor_sub?`, `scan_id?`
   (string libre, igual que `correlation_id`), `payload`. Sin `schema_version`
   (ver `docs/architecture.md`).
 - `scan_id` es obligatorio en `scan.*` y `finding.*`; `actor_sub` lo es en
-  `auth.*`, `ratelimit.*` y `audit.recorded`.
+  `auth.*`, `ratelimit.*` y `audit.recorded`. `siem.alert` no lleva ninguno de
+  los dos (el schema los prohíbe) y su `source` es siempre `wazuh`.
 
 | `event_type` | Productor | `payload` |
 |---|---|---|
@@ -243,8 +244,9 @@ valor de laboratorio explícitamente ficticio (p. ej.
 | `ratelimit.hit` | gateway | `route`, `limit`, `window_seconds` |
 | `message.deadlettered` | gateway | `queue`, `reason_code` (nunca el cuerpo) |
 | `audit.recorded` | user-service | `action`, `resource_type` |
+| `siem.alert` | gateway (relays a Wazuh alert; `source` = `wazuh`) | `rule_id`, `rule_level` (0..15), `severity` (derived: 0-6 `low`, 7-9 `medium`, 10-12 `high`, 13-15 `critical`; the schema enforces it), `description` (max 256), `agent` (`id`, `name`), `src_ip?`, `dest_ip?`, `signature?` (Suricata `data.alert.signature`, max 256). Off by default (D-18). |
 
-**Privacidad:** todos los objetos son `additionalProperties: false`; no hay
+**Privacidad:** `siem.alert` es la excepción acotada: `description` y `signature` son texto de la regla (máx. 256), nunca el log crudo (`full_log`). Todos los objetos son `additionalProperties: false`; no hay
 campos de texto libre (los motivos son códigos `snake_case`, la ruta no admite
 query string). Así no pasan credenciales, tokens, salida cruda de nmap ni
 cuerpos de mensajes.

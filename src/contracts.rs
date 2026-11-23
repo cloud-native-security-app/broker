@@ -624,7 +624,7 @@ mod tests {
         "/contracts/examples/security-event"
     );
 
-    const SECURITY_EVENT_TYPES: [&str; 11] = [
+    const SECURITY_EVENT_TYPES: [&str; 12] = [
         "scan.requested",
         "scan.cancelled",
         "scan.started",
@@ -636,6 +636,7 @@ mod tests {
         "ratelimit.hit",
         "message.deadlettered",
         "audit.recorded",
+        "siem.alert",
     ];
 
     fn envelope(event_type: &str, source: &str, payload: Value) -> Value {
@@ -696,7 +697,28 @@ mod tests {
                 "user-service",
                 json!({"action": "user.updated", "resource_type": "user"}),
             ),
+            siem_alert(),
         ]
+    }
+
+    /// `siem.alert` carries neither `scan_id` nor `actor_sub`.
+    fn siem_alert() -> Value {
+        json!({
+            "event_id": "3f2b8c1e-5d4a-4e7b-9a10-2c6d8e0f1a43",
+            "event_type": "siem.alert",
+            "occurred_at": "2026-11-09T12:30:00Z",
+            "source": "wazuh",
+            "payload": {
+                "rule_id": "5710",
+                "rule_level": 10,
+                "severity": "high",
+                "description": "sshd: attempt to login using a non-existent user",
+                "agent": {"id": "001", "name": "lab-target"},
+                "src_ip": "203.0.113.7",
+                "dest_ip": "198.51.100.4",
+                "signature": "ET SCAN Potential SSH Scan"
+            }
+        })
     }
 
     fn security_event(event_type: &str) -> Value {
@@ -930,6 +952,138 @@ mod tests {
             validate_security_event(&event).is_err(),
             "target stays the pinned IP"
         );
+    }
+
+    #[test]
+    fn siem_alert_maps_every_rule_level_to_its_severity_band() {
+        let bands = [
+            (0, "low"),
+            (6, "low"),
+            (7, "medium"),
+            (9, "medium"),
+            (10, "high"),
+            (12, "high"),
+            (13, "critical"),
+            (15, "critical"),
+        ];
+        for (level, severity) in bands {
+            let mut event = siem_alert();
+            event["payload"]["rule_level"] = json!(level);
+            event["payload"]["severity"] = json!(severity);
+            assert!(
+                validate_security_event(&event).is_ok(),
+                "level {level} -> {severity}"
+            );
+            for other in ["low", "medium", "high", "critical"] {
+                if other == severity {
+                    continue;
+                }
+                event["payload"]["severity"] = json!(other);
+                assert!(
+                    validate_security_event(&event).is_err(),
+                    "level {level} must not accept {other}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn siem_alert_rejects_bad_levels_severities_and_extra_fields() {
+        for level in [json!(16), json!(-1), json!(7.5), json!("10")] {
+            let mut event = siem_alert();
+            event["payload"]["rule_level"] = level.clone();
+            assert!(
+                validate_security_event(&event).is_err(),
+                "rule_level {level} must be rejected"
+            );
+        }
+        let mut event = siem_alert();
+        event["payload"]["severity"] = json!("info");
+        assert!(validate_security_event(&event).is_err());
+
+        let mut event = siem_alert();
+        event["payload"]["full_log"] = json!("raw log line");
+        assert!(validate_security_event(&event).is_err());
+
+        let mut event = siem_alert();
+        event["payload"]["agent"]["ip"] = json!("198.51.100.4");
+        assert!(validate_security_event(&event).is_err());
+    }
+
+    #[test]
+    fn siem_alert_requires_wazuh_source_and_its_mandatory_fields() {
+        for source in ["gateway", "nmap-service", "user-service"] {
+            let mut event = siem_alert();
+            event["source"] = json!(source);
+            assert!(
+                validate_security_event(&event).is_err(),
+                "siem.alert from {source} must be rejected"
+            );
+        }
+        for field in ["rule_id", "rule_level", "severity", "description", "agent"] {
+            let mut event = siem_alert();
+            event["payload"].as_object_mut().unwrap().remove(field);
+            assert!(
+                validate_security_event(&event).is_err(),
+                "siem.alert without {field} must be rejected"
+            );
+        }
+        for field in ["id", "name"] {
+            let mut event = siem_alert();
+            event["payload"]["agent"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            assert!(
+                validate_security_event(&event).is_err(),
+                "agent without {field} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn siem_alert_optional_fields_are_optional_and_ips_are_validated() {
+        let mut event = siem_alert();
+        for field in ["src_ip", "dest_ip", "signature"] {
+            event["payload"].as_object_mut().unwrap().remove(field);
+        }
+        assert!(validate_security_event(&event).is_ok(), "Wazuh-only alert");
+
+        for ip in ["2001:db8::7", "203.0.113.7"] {
+            event["payload"]["src_ip"] = json!(ip);
+            assert!(validate_security_event(&event).is_ok(), "{ip}");
+        }
+        for ip in ["999.1.1.1", "not-an-ip", ""] {
+            event["payload"]["src_ip"] = json!(ip);
+            assert!(
+                validate_security_event(&event).is_err(),
+                "src_ip {ip:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn siem_alert_bounds_free_text_and_carries_no_scan_or_actor_ids() {
+        let mut event = siem_alert();
+        event["payload"]["description"] = json!("x".repeat(257));
+        assert!(validate_security_event(&event).is_err());
+
+        let mut event = siem_alert();
+        event["payload"]["signature"] = json!("x".repeat(257));
+        assert!(validate_security_event(&event).is_err());
+
+        let mut event = siem_alert();
+        event["payload"]["agent"]["name"] = json!("x".repeat(129));
+        assert!(validate_security_event(&event).is_err());
+
+        for field in ["scan_id", "actor_sub"] {
+            let mut event = siem_alert();
+            event[field] = json!("anything");
+            assert!(
+                validate_security_event(&event).is_err(),
+                "siem.alert must not carry {field}"
+            );
+        }
     }
 
     #[test]

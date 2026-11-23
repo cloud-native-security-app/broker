@@ -222,3 +222,30 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
   target and nmap never resolves `target_host`; it only uses it as the HTTP
   host. The hostname pattern keeps a leading `-` out of nmap's argv. Additive
   and backwards compatible; consumers deploy before producers.
+
+## D-18 `siem.alert` event type over Kinesis
+
+- **Decision:** `security-event` gains `siem.alert`, with `source` `wazuh`
+  (new enum value; the schema requires it for this type). Payload: `rule_id`,
+  `rule_level` (integer 0..15), `severity` (`low`/`medium`/`high`/`critical`),
+  `description` (max 256), `agent` (`id`, `name`), and optional `src_ip`,
+  `dest_ip` (IPv4/IPv6) and `signature` (Suricata `data.alert.signature`, max
+  256). All objects are closed. The event carries neither `scan_id` nor
+  `actor_sub` (the schema forbids both); the producer partitions by `agent.id`,
+  which keeps one agent's alerts ordered within a shard.
+- **Severity bands:** `severity` is derived from `rule_level`: 0-6 `low`, 7-9
+  `medium`, 10-12 `high`, 13-15 `critical`, and the schema enforces the
+  mapping so producers and consumers cannot disagree. These are our own bands,
+  not taken from Wazuh documentation (Wazuh only defines the 0..15 levels).
+- **Why Kinesis:** an alert is an immutable fact that several consumers read
+  independently (admin feed, KPIs), the same reason as D-14. It is not a
+  command, so SNS + SQS routing and DLQ semantics do not apply. Delivery is
+  at-least-once and consumers dedupe on `event_id`.
+- **Off by default:** the gateway ingestion endpoint that produces it is
+  disabled unless a feature flag is set (infra `siem_enabled`, SR-05), so
+  nothing publishes it until enabled. This repo does not deploy Wazuh or
+  Suricata; it only defines the contract they can feed.
+- **Consequence:** additive; consumers must tolerate the new `event_type` and
+  `source` values and deploy before the producer. `description` and
+  `signature` are the first bounded free text in this contract (rule text,
+  never the raw log).

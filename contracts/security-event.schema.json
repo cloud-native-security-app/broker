@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://security-app.example.test/broker/contracts/security-event.schema.json",
   "title": "SecurityEvent",
-  "description": "Immutable domain fact published to the Kinesis Data Stream security-events by gateway, nmap-service and user-service, and read by the gateway admin panel. Partition key (documented, not enforced here): scan_id, else actor_sub. Events never carry credentials, tokens, raw scan output or message bodies: every object is closed (additionalProperties false) and reasons are short codes, never free text. No schema_version on purpose (docs/architecture.md).",
+  "description": "Immutable domain fact published to the Kinesis Data Stream security-events by gateway, nmap-service, user-service and, for siem.alert, the gateway relaying a Wazuh alert (source wazuh), and read by the gateway admin panel. Partition key (documented, not enforced here): scan_id, else actor_sub, else agent.id for siem.alert. Events never carry credentials, tokens, raw scan output or message bodies: every object is closed (additionalProperties false) and reasons are short codes, never free text. No schema_version on purpose (docs/architecture.md).",
   "$defs": {
     "emptyPayload": {
       "type": "object",
@@ -241,6 +241,171 @@
         "resource_type"
       ],
       "additionalProperties": false
+    },
+    "ipAddress": {
+      "type": "string",
+      "anyOf": [
+        {
+          "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+        },
+        {
+          "pattern": "^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$"
+        }
+      ],
+      "description": "IPv4 or IPv6 address, same patterns as scanRequestedPayload target."
+    },
+    "siemAlertPayload": {
+      "type": "object",
+      "properties": {
+        "rule_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "description": "Wazuh rule.id (numeric string in practice)."
+        },
+        "rule_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15,
+          "description": "Wazuh rule.level, 0..15."
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "description": "Derived from rule_level by the producer: 0-6 low, 7-9 medium, 10-12 high, 13-15 critical (D-18). The schema enforces the mapping."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Wazuh rule.description (rule text, never the raw log line)."
+        },
+        "agent": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+              "description": "Wazuh agent.id, e.g. 000 for the manager."
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "src_ip": {
+          "$ref": "#/$defs/ipAddress"
+        },
+        "dest_ip": {
+          "$ref": "#/$defs/ipAddress"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Suricata data.alert.signature, present only for Suricata alerts relayed by Wazuh."
+        }
+      },
+      "required": [
+        "rule_id",
+        "rule_level",
+        "severity",
+        "description",
+        "agent"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "rule_level": {
+                "minimum": 0,
+                "maximum": 6
+              }
+            },
+            "required": [
+              "rule_level"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "low"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "rule_level": {
+                "minimum": 7,
+                "maximum": 9
+              }
+            },
+            "required": [
+              "rule_level"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "medium"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "rule_level": {
+                "minimum": 10,
+                "maximum": 12
+              }
+            },
+            "required": [
+              "rule_level"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "high"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "rule_level": {
+                "minimum": 13,
+                "maximum": 15
+              }
+            },
+            "required": [
+              "rule_level"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": "critical"
+              }
+            }
+          }
+        }
+      ]
     }
   },
   "type": "object",
@@ -262,7 +427,8 @@
         "auth.logout",
         "ratelimit.hit",
         "message.deadlettered",
-        "audit.recorded"
+        "audit.recorded",
+        "siem.alert"
       ]
     },
     "occurred_at": {
@@ -275,7 +441,8 @@
       "enum": [
         "gateway",
         "nmap-service",
-        "user-service"
+        "user-service",
+        "wazuh"
       ]
     },
     "actor_sub": {
@@ -510,6 +677,42 @@
           "payload": {
             "$ref": "#/$defs/auditRecordedPayload"
           }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "siem.alert"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/siemAlertPayload"
+          },
+          "source": {
+            "const": "wazuh"
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "scan_id"
+              ]
+            },
+            {
+              "required": [
+                "actor_sub"
+              ]
+            }
+          ]
         }
       }
     },
