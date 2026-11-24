@@ -965,6 +965,7 @@ mod tests {
             (12, "high"),
             (13, "critical"),
             (15, "critical"),
+            (16, "critical"),
         ];
         for (level, severity) in bands {
             let mut event = siem_alert();
@@ -989,7 +990,7 @@ mod tests {
 
     #[test]
     fn siem_alert_rejects_bad_levels_severities_and_extra_fields() {
-        for level in [json!(16), json!(-1), json!(7.5), json!("10")] {
+        for level in [json!(17), json!(-1), json!(7.5), json!("10")] {
             let mut event = siem_alert();
             event["payload"]["rule_level"] = level.clone();
             assert!(

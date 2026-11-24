@@ -265,8 +265,8 @@
         "rule_level": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 15,
-          "description": "Wazuh rule.level, 0..15."
+          "maximum": 16,
+          "description": "Wazuh rule.level, 0..16 (16 is reserved for custom rules)."
         },
         "severity": {
           "enum": [
@@ -275,7 +275,7 @@
             "high",
             "critical"
           ],
-          "description": "Derived from rule_level by the producer: 0-6 low, 7-9 medium, 10-12 high, 13-15 critical (D-18). The schema enforces the mapping."
+          "description": "Derived from rule_level by the producer: 0-6 low, 7-9 medium, 10-12 high, 13-16 critical (D-18). The schema enforces the mapping."
         },
         "description": {
           "type": "string",
@@ -390,7 +390,7 @@
             "properties": {
               "rule_level": {
                 "minimum": 13,
-                "maximum": 15
+                "maximum": 16
               }
             },
             "required": [
