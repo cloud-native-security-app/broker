@@ -244,7 +244,7 @@ valor de laboratorio explícitamente ficticio (p. ej.
 | `ratelimit.hit` | gateway | `route`, `limit`, `window_seconds` |
 | `message.deadlettered` | gateway | `queue`, `reason_code` (nunca el cuerpo) |
 | `audit.recorded` | user-service | `action`, `resource_type` |
-| `siem.alert` | gateway (relays a Wazuh alert; `source` = `wazuh`) | `rule_id`, `rule_level` (0..15), `severity` (derived: 0-6 `low`, 7-9 `medium`, 10-12 `high`, 13-15 `critical`; the schema enforces it), `description` (max 256), `agent` (`id`, `name`), `src_ip?`, `dest_ip?`, `signature?` (Suricata `data.alert.signature`, max 256). Off by default (D-18). |
+| `siem.alert` | gateway (relays a Wazuh alert; `source` = `wazuh`) | `rule_id`, `rule_level` (0..16), `severity` (derived: 0-6 `low`, 7-9 `medium`, 10-12 `high`, 13-16 `critical`; the schema enforces it), `description` (max 256), `agent` (`id`, `name`), `src_ip?`, `dest_ip?`, `signature?` (Suricata `data.alert.signature`, max 256). Off by default (D-18). |
 
 **Privacidad:** `siem.alert` es la excepción acotada: `description` y `signature` son texto de la regla (máx. 256), nunca el log crudo (`full_log`). Todos los objetos son `additionalProperties: false`; no hay
 campos de texto libre (los motivos son códigos `snake_case`, la ruta no admite

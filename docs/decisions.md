@@ -227,16 +227,20 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
 
 - **Decision:** `security-event` gains `siem.alert`, with `source` `wazuh`
   (new enum value; the schema requires it for this type). Payload: `rule_id`,
-  `rule_level` (integer 0..15), `severity` (`low`/`medium`/`high`/`critical`),
+  `rule_level` (integer 0..16), `severity` (`low`/`medium`/`high`/`critical`),
   `description` (max 256), `agent` (`id`, `name`), and optional `src_ip`,
   `dest_ip` (IPv4/IPv6) and `signature` (Suricata `data.alert.signature`, max
   256). All objects are closed. The event carries neither `scan_id` nor
   `actor_sub` (the schema forbids both); the producer partitions by `agent.id`,
   which keeps one agent's alerts ordered within a shard.
 - **Severity bands:** `severity` is derived from `rule_level`: 0-6 `low`, 7-9
-  `medium`, 10-12 `high`, 13-15 `critical`, and the schema enforces the
+  `medium`, 10-12 `high`, 13-16 `critical`, and the schema enforces the
   mapping so producers and consumers cannot disagree. These are our own bands,
-  not taken from Wazuh documentation (Wazuh only defines the 0..15 levels).
+  not taken from Wazuh documentation: Wazuh defines levels 0..16 with a title
+  each (Rules classification), but no low/medium/high/critical grouping.
+  Level 16 ("Maximum severity") is used by no default rule and is reserved for
+  custom rules; it was rejected until 2026-11-24 (RF-17) and is now accepted
+  as `critical`.
 - **Why Kinesis:** an alert is an immutable fact that several consumers read
   independently (admin feed, KPIs), the same reason as D-14. It is not a
   command, so SNS + SQS routing and DLQ semantics do not apply. Delivery is
