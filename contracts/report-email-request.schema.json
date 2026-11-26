@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://security-app.example.test/broker/contracts/report-email-request.schema.json",
+  "title": "ReportEmailRequest",
+  "description": "Message published by user-service to the SQS queue user-service-report-emails (no SNS topic) after a scan is marked COMPLETADO. Consumed by user-service itself. Delivery is at-least-once: consumers dedupe through the Postgres report_email_status claim. See `docs/decisions.md` (D-19).",
+  "type": "object",
+  "properties": {
+    "scan_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Scan identifier, same free-form string as correlation_id in scan-outcome."
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC 3339 with offset. The pattern is there because format is only an annotation in draft 2020-12."
+    }
+  },
+  "required": ["scan_id", "requested_at"],
+  "additionalProperties": false
+}

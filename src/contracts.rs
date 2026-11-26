@@ -32,6 +32,11 @@ pub const SCAN_CANCELLATION_SCHEMA: &str =
 /// `contracts/README.md`).
 pub const SECURITY_EVENT_SCHEMA: &str = include_str!("../contracts/security-event.schema.json");
 
+/// JSON Schema de `ReportEmailRequest` (cola SQS `user-service-report-emails`,
+/// ver `contracts/report-email-request.schema.json` y `contracts/README.md`).
+pub const REPORT_EMAIL_REQUEST_SCHEMA: &str =
+    include_str!("../contracts/report-email-request.schema.json");
+
 /// Errores propios de la validación de un payload contra su JSON Schema.
 #[derive(Debug, thiserror::Error)]
 pub enum ContractError {
@@ -68,6 +73,16 @@ fn scan_cancellation_validator() -> &'static Validator {
 fn security_event_validator() -> &'static Validator {
     static VALIDATOR: OnceLock<Validator> = OnceLock::new();
     VALIDATOR.get_or_init(|| compile("security-event.schema.json", SECURITY_EVENT_SCHEMA))
+}
+
+fn report_email_request_validator() -> &'static Validator {
+    static VALIDATOR: OnceLock<Validator> = OnceLock::new();
+    VALIDATOR.get_or_init(|| {
+        compile(
+            "report-email-request.schema.json",
+            REPORT_EMAIL_REQUEST_SCHEMA,
+        )
+    })
 }
 
 /// Valida `payload` contra `contracts/scan-request.schema.json`.
@@ -128,6 +143,21 @@ pub fn validate_security_event(event: &Value) -> Result<(), ContractError> {
         .validate(event)
         .map_err(|err| ContractError::SchemaViolation {
             schema: "security-event.schema.json".to_string(),
+            detail: err.to_string(),
+        })
+}
+
+/// Valida `payload` contra `contracts/report-email-request.schema.json`.
+///
+/// # Errors
+///
+/// Devuelve [`ContractError::SchemaViolation`] con el detalle del primer
+/// error de validación si `payload` no cumple el schema.
+pub fn validate_report_email_request(payload: &Value) -> Result<(), ContractError> {
+    report_email_request_validator()
+        .validate(payload)
+        .map_err(|err| ContractError::SchemaViolation {
+            schema: "report-email-request.schema.json".to_string(),
             detail: err.to_string(),
         })
 }
@@ -421,6 +451,39 @@ mod tests {
             .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
+    }
+
+    const REPORT_EMAIL_REQUEST_EXAMPLES_DIR: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/contracts/examples/report-email-request"
+    );
+
+    #[test]
+    fn report_email_request_examples_validate() {
+        let examples = read_examples(REPORT_EMAIL_REQUEST_EXAMPLES_DIR);
+        assert!(!examples.is_empty(), "expected the valid examples");
+        for (name, value) in examples {
+            validate_report_email_request(&value)
+                .unwrap_or_else(|err| panic!("{name} must validate: {err}"));
+        }
+    }
+
+    #[test]
+    fn invalid_report_email_request_examples_are_rejected() {
+        let dir = format!("{REPORT_EMAIL_REQUEST_EXAMPLES_DIR}/invalid");
+        let examples = read_examples(&dir);
+        assert!(examples.len() >= 4, "expected the invalid examples");
+        for (name, value) in examples {
+            assert!(
+                validate_report_email_request(&value).is_err(),
+                "{name} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn report_email_request_schema_constant_is_embedded() {
+        assert!(REPORT_EMAIL_REQUEST_SCHEMA.contains("ReportEmailRequest"));
     }
 
     #[test]
