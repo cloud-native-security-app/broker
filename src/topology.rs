@@ -13,7 +13,9 @@ pub fn topics() -> Vec<&'static str> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueueSpec {
     pub name: &'static str,
-    pub topic: &'static str,
+    /// SNS topic the queue subscribes to; `None` when the producer sends to
+    /// the queue directly (no subscription).
+    pub topic: Option<&'static str>,
     /// `routing_key` prefix the subscription filters on, when filtered.
     pub routing_key_prefix: Option<&'static str>,
     pub visibility_secs: u32,
@@ -48,7 +50,7 @@ pub fn requests_visibility_secs(
     (ssh_connect_secs + ssh_command_secs).max(local_scan_secs) + nvd_budget_secs + 60
 }
 
-/// The three consumer queues with infra's default timeouts (SSH 10 s + 900 s,
+/// The consumer queues with infra's default timeouts (SSH 10 s + 900 s,
 /// local scan 900 s, NVD budget 300 s).
 pub fn queues() -> Vec<QueueSpec> {
     const DEFAULT_RETENTION: u32 = 4 * 24 * 3600;
@@ -56,7 +58,7 @@ pub fn queues() -> Vec<QueueSpec> {
     vec![
         QueueSpec {
             name: "ms-nmap-scan-requests",
-            topic: "scan-requests",
+            topic: Some("scan-requests"),
             routing_key_prefix: None,
             visibility_secs: requests_visibility_secs(10, 900, 900, 300),
             // Requests carry SSH credentials: keep them briefly (Q4), but long
@@ -67,7 +69,7 @@ pub fn queues() -> Vec<QueueSpec> {
         },
         QueueSpec {
             name: "ms-nmap-scan-cancellations",
-            topic: "scan-cancellations",
+            topic: Some("scan-cancellations"),
             routing_key_prefix: None,
             visibility_secs: 30,
             retention_secs: DEFAULT_RETENTION,
@@ -75,9 +77,19 @@ pub fn queues() -> Vec<QueueSpec> {
         },
         QueueSpec {
             name: "gateway-scan-outcomes",
-            topic: "scan-outcomes",
+            topic: Some("scan-outcomes"),
             routing_key_prefix: Some("scan.outcome."),
             visibility_secs: 30,
+            retention_secs: DEFAULT_RETENTION,
+            dlq_retention_secs: DEFAULT_DLQ_RETENTION,
+        },
+        // RF-20: user-service sends and consumes it directly (no SNS topic);
+        // SQS drives the retries, one SMTP attempt per receive.
+        QueueSpec {
+            name: "user-service-report-emails",
+            topic: None,
+            routing_key_prefix: None,
+            visibility_secs: 120,
             retention_secs: DEFAULT_RETENTION,
             dlq_retention_secs: DEFAULT_DLQ_RETENTION,
         },
@@ -104,13 +116,25 @@ mod tests {
     }
 
     #[test]
-    fn every_queue_subscribes_to_a_known_topic_and_has_a_dlq() {
+    fn every_queue_has_a_dlq_and_a_topic_is_a_known_one_when_present() {
         let queues = queues();
-        assert_eq!(queues.len(), 3);
+        assert_eq!(queues.len(), 4);
         for queue in &queues {
-            assert!(topics().contains(&queue.topic), "{queue:?}");
+            if let Some(topic) = queue.topic {
+                assert!(topics().contains(&topic), "{queue:?}");
+            }
             assert_eq!(queue.dlq_name(), format!("{}-dlq", queue.name));
         }
+    }
+
+    #[test]
+    fn only_the_report_email_queue_has_no_topic() {
+        let topicless: Vec<_> = queues()
+            .into_iter()
+            .filter(|q| q.topic.is_none())
+            .map(|q| q.name)
+            .collect();
+        assert_eq!(topicless, vec!["user-service-report-emails"]);
     }
 
     #[test]
@@ -147,7 +171,8 @@ mod tests {
         {
             assert_eq!(queue.retention_secs, 4 * 24 * 3600, "{}", queue.name);
             assert_eq!(queue.dlq_retention_secs, 14 * 24 * 3600, "{}", queue.name);
-            assert_eq!(queue.visibility_secs, 30, "{}", queue.name);
+            let visibility = if queue.topic.is_some() { 30 } else { 120 };
+            assert_eq!(queue.visibility_secs, visibility, "{}", queue.name);
         }
     }
 

@@ -89,7 +89,9 @@ impl Env {
         }
         for spec in topology::queues() {
             self.create_queue_pair(&spec, visibility_override).await;
-            self.subscribe(&spec).await;
+            if spec.topic.is_some() {
+                self.subscribe(&spec).await;
+            }
         }
     }
 
@@ -161,11 +163,12 @@ impl Env {
     }
 
     async fn subscribe(&self, spec: &QueueSpec) {
+        let topic = spec.topic.expect("subscribe needs a topic");
         let queue_arn = self.queue_arn(&self.queue_urls[spec.name]).await;
         let subscription = self
             .sns
             .subscribe()
-            .topic_arn(&self.topic_arns[spec.topic])
+            .topic_arn(&self.topic_arns[topic])
             .protocol("sqs")
             .endpoint(queue_arn)
             .send()

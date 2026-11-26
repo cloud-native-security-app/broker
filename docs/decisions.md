@@ -253,3 +253,19 @@ D-01 a D-10 describen la etapa RabbitMQ (histórica, reemplazada por D-13).
   `source` values and deploy before the producer. `description` and
   `signature` are the first bounded free text in this contract (rule text,
   never the raw log).
+
+## D-19 `ReportEmailRequest` goes over SQS, outside the SNS topology
+
+- **Decision:** user-service publishes `ReportEmailRequest` (`scan_id`,
+  `requested_at`) directly to its own SQS queue `user-service-report-emails`,
+  with a DLQ (`maxReceiveCount` 3). There is no SNS topic and no routing key.
+- **Context:** the message has a single producer and a single consumer, both
+  user-service, so a topic would add a hop and no fan-out. SQS drives the
+  retries: each receive makes one SMTP attempt, and after the third failed
+  receive the redrive moves the message to the DLQ.
+- **Consequence:** the queue is declared in `src/topology.rs` with `topic:
+  None` (no SNS subscription) and mirrored by `tests/topology_parity.rs`
+  against its own `aws_sqs_queue` block in infra and its `create_queue` lines
+  in `localstack-init.sh`. Delivery is at-least-once; consumers dedupe through
+  the Postgres `report_email_status` claim. The contract is
+  `contracts/report-email-request.schema.json`.

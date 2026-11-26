@@ -16,6 +16,7 @@ verificación contra el repo hermano `nmap-service`.
 | [`scan-outcome.schema.json`](./scan-outcome.schema.json) | `ScanOutcome` (`started`/`completed`/`failed`) | `completed`/`failed` implementados; `started` **PENDIENTE** (ver abajo) |
 | [`scan-cancellation.schema.json`](./scan-cancellation.schema.json) | `ScanCancellation` | Canal y schema definidos aquí; consumo/honra en `ms-nmap` **PENDIENTE** (ver abajo) |
 | [`security-event.schema.json`](./security-event.schema.json) | `SecurityEvent` (12 `event_type`) | Definido aquí (D-14); los productores lo implementan en KAP-06/07/08 |
+| [`report-email-request.schema.json`](./report-email-request.schema.json) | `ReportEmailRequest` | Definido aquí (D-19); lo publica y consume user-service (RF-20) |
 
 ## `ScanRequest`
 
@@ -254,3 +255,21 @@ cuerpos de mensajes.
 **Ejemplos:** [`examples/security-event/`](./examples/security-event/) trae un
 JSON válido por tipo; `src/contracts.rs` los valida y los productores pueden
 reutilizarlos en sus tests.
+
+## `ReportEmailRequest`
+
+- **Cola SQS:** `user-service-report-emails` (con DLQ `user-service-report-emails-dlq`).
+- **Sin tópico SNS ni `routing_key`:** user-service publica directo a la cola.
+- **Publica:** user-service, tras marcar un scan como `COMPLETADO`.
+- **Consume:** user-service (un loop propio de long polling).
+- **Entrega:** at-least-once; los consumidores deduplican con el claim de
+  `report_email_status` en Postgres.
+
+Campos: `scan_id` (string no vacío, igual que `correlation_id`) y
+`requested_at` (RFC 3339 con offset). Ambos son `required` y el schema usa
+`additionalProperties: false`. No lleva correo ni datos del usuario: el
+consumidor los resuelve desde la base de datos.
+
+**Ejemplos:** [`examples/report-email-request/`](./examples/report-email-request/)
+(válidos) y `examples/report-email-request/invalid/` (deben rechazarse);
+`src/contracts.rs` valida ambos.

@@ -87,11 +87,14 @@ async fn subscriptions_use_raw_delivery_and_only_the_gateway_one_is_filtered() {
     let env = support::start(None).await;
 
     for spec in topology::queues() {
+        let Some(topic) = spec.topic else {
+            continue;
+        };
         let queue_arn = env.queue_arn(&env.queue_urls[spec.name]).await;
         let subscriptions = env
             .sns
             .list_subscriptions_by_topic()
-            .topic_arn(&env.topic_arns[spec.topic])
+            .topic_arn(&env.topic_arns[topic])
             .send()
             .await
             .expect("subscriptions")
@@ -100,7 +103,7 @@ async fn subscriptions_use_raw_delivery_and_only_the_gateway_one_is_filtered() {
         let subscription = subscriptions
             .iter()
             .find(|s| s.endpoint.as_deref() == Some(queue_arn.as_str()))
-            .unwrap_or_else(|| panic!("{} must subscribe to {}", spec.name, spec.topic));
+            .unwrap_or_else(|| panic!("{} must subscribe to {}", spec.name, topic));
         let attrs = env
             .sns
             .get_subscription_attributes()
